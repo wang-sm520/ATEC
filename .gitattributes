@@ -1,0 +1,6 @@
+*.png !text !filter !merge !diff
+*.usd !text !filter !merge !diff
+*.usda !text !filter !merge !diff
+*.yaml !text !filter !merge !diff
+*.hdr !text !filter !merge !diff
+*.pt !text !filter !merge !diff

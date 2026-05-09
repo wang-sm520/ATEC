@@ -66,26 +66,13 @@ class UnitreeG1AMPTaskAEnvCfg(UnitreeG1AMPRoughEnvCfg):
                 # proportion-based random tile selection (suitable for parallel training).
                 terrain_sequence=None,
                 sub_terrains={
-                    # User-requested proportions: flat=30, rough=30, each pyramid type=20
-                    # (IsaacLab normalizes these weights; effective ratios are 30/140 = 21.4%
-                    # for flat/rough and 20/140 = 14.3% for each of the 4 pyramid variants).
+                    # User-requested proportions (slopes removed): flat=30, rough=30,
+                    # stairs (up)=20, stairs (inv/down)=20. Sum = 100 -> no normalization quirk.
                     "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.30),
                     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
                         proportion=0.30,
                         noise_range=(0.02, 0.10),
                         noise_step=0.02,
-                        border_width=0.25,
-                    ),
-                    "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
-                        proportion=0.20,
-                        slope_range=(0.10, 0.40),  # bottom = curriculum start (gentle); top = Task A eval difficulty
-                        platform_width=2.5,
-                        border_width=0.25,
-                    ),
-                    "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
-                        proportion=0.20,
-                        slope_range=(0.10, 0.40),  # bottom = curriculum start (gentle); top = Task A eval difficulty
-                        platform_width=2.5,
                         border_width=0.25,
                     ),
                     "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(

@@ -31,8 +31,8 @@ COPY --chown=admin:admin run.sh ./solution/
 COPY --chown=admin:admin requirements.txt ./solution/
 COPY --chown=admin:admin server.py ./solution/
 
-# demo1: 全 O demo
-COPY --chown=admin:admin solution_zero.py ./solution/solution.py
+# demo1: 全 0 demo
+# COPY --chown=admin:admin solution_zero.py ./solution/solution.py
 
 # demo2: RL demo
 # COPY --chown=admin:admin solution_rl.py ./solution/solution.py
@@ -42,6 +42,10 @@ COPY --chown=admin:admin solution_zero.py ./solution/solution.py
 # COPY --chown=admin:admin solution_act.py ./solution/solution.py
 # COPY --chown=admin:admin act ./solution/act
 # COPY --chown=admin:admin policy_act.pt ./solution/policy_act.pt
+
+# G1 AMP (Task A) — trained AMP-PPO actor + term-major obs solution
+COPY --chown=admin:admin solution.py ./solution/solution.py
+COPY --chown=admin:admin policy.pt ./solution/
 
 
 # 赋予 run.sh 可执行权限（不要改）

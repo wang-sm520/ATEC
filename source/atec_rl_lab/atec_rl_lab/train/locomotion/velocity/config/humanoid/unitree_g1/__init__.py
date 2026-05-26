@@ -6,7 +6,7 @@ from . import agents
 
 gym.register(
     id="ATEC-Isaac-AMP-Unitree-G1-Rough-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="atec_rl_lab.tasks.task_base:G1AMPGaitEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.rough_env_cfg:UnitreeG1AMPRoughEnvCfg",
@@ -16,7 +16,7 @@ gym.register(
 
 gym.register(
     id="ATEC-Isaac-AMP-Unitree-G1-Flat-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="atec_rl_lab.tasks.task_base:G1AMPGaitEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.flat_env_cfg:UnitreeG1AMPFlatEnvCfg",
@@ -26,7 +26,7 @@ gym.register(
 
 gym.register(
     id="ATEC-Isaac-AMP-Unitree-G1-TaskA-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="atec_rl_lab.tasks.task_base:G1AMPGaitEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.task_a_env_cfg:UnitreeG1AMPTaskAEnvCfg",

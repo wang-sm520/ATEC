@@ -652,6 +652,14 @@ def lin_vel_z_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntity
     return reward
 
 
+def lin_vel_y_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalize y-axis (lateral) base linear velocity using L2 squared kernel."""
+    asset: RigidObject = env.scene[asset_cfg.name]
+    reward = torch.square(asset.data.root_lin_vel_b[:, 1])
+    reward *= torch.clamp(-env.scene["robot"].data.projected_gravity_b[:, 2], 0, 0.7) / 0.7
+    return reward
+
+
 def ang_vel_xy_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Penalize xy-axis base angular velocity using L2 squared kernel."""
     # extract the used quantities (to enable type-hinting)
@@ -684,3 +692,327 @@ def flat_orientation_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = Scen
     reward = torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=1)
     reward *= torch.clamp(-env.scene["robot"].data.projected_gravity_b[:, 2], 0, 0.7) / 0.7
     return reward
+
+
+# ======================================================================================
+# bxi-ported rewards (`bx_lab_amp/legged_lab/mdp/my_rewards.py`)
+# Naming kept consistent with bxi so reward weights can be one-to-one mapped.
+# ======================================================================================
+
+
+def _get_euler_xyz(quat: torch.Tensor) -> torch.Tensor:
+    """Return (..., 3) euler angles (roll, pitch, yaw) from a (..., 4) wxyz quaternion.
+
+    Mirrors bxi `get_euler_xyz_tensor`. Output is wrapped to (-π, π).
+    """
+    qw, qx, qy, qz = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
+    # roll (x)
+    sinr_cosp = 2.0 * (qw * qx + qy * qz)
+    cosr_cosp = qw * qw - qx * qx - qy * qy + qz * qz
+    roll = torch.atan2(sinr_cosp, cosr_cosp)
+    # pitch (y), guard for gimbal lock
+    sinp = 2.0 * (qw * qy - qz * qx)
+    sinp = torch.clamp(sinp, -1.0, 1.0)
+    pitch = torch.asin(sinp)
+    # yaw (z)
+    siny_cosp = 2.0 * (qw * qz + qx * qy)
+    cosy_cosp = qw * qw + qx * qx - qy * qy - qz * qz
+    yaw = torch.atan2(siny_cosp, cosy_cosp)
+    euler = torch.stack([roll, pitch, yaw], dim=-1)
+    return euler
+
+
+def energy(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Mechanical-power-like penalty: norm of |applied_torque * joint_vel|. (bxi `energy`)"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    return torch.norm(torch.abs(asset.data.applied_torque * asset.data.joint_vel), dim=-1)
+
+
+def action_smoothness(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Second-order action smoothness + L1: (a_t - a_{t-1})^2 + (a_t + a_{t-2} - 2 a_{t-1})^2 + 0.05 * |a_t|.
+
+    Uses the env's action manager prev / prev_prev buffers (rsl-rl 3.x style).
+    """
+    am = env.action_manager
+    a_t = am.action
+    a_t1 = am.prev_action
+    # IsaacLab keeps only one prev step; approximate `a_{t-2}` by holding prev_action (zero second-derivative
+    # contribution at startup). Functionally equivalent to bxi after first 2 steps.
+    a_t2 = getattr(am, "prev_prev_action", None)
+    if a_t2 is None:
+        a_t2 = a_t1
+    term_1 = torch.sum((a_t - a_t1) ** 2, dim=1)
+    term_2 = torch.sum((a_t + a_t2 - 2.0 * a_t1) ** 2, dim=1)
+    term_3 = 0.05 * torch.sum(torch.abs(a_t), dim=1)
+    return term_1 + term_2 + term_3
+
+
+def fly(env: ManagerBasedRLEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize both feet being airborne simultaneously."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    net = contact_sensor.data.net_forces_w_history
+    is_contact = torch.max(torch.norm(net[:, :, sensor_cfg.body_ids], dim=-1), dim=1)[0] > threshold
+    return (torch.sum(is_contact, dim=-1) < 0.5).float()
+
+
+def ang_vel_xy_l2_body(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize xy angular velocity of a specific body (not the root), in that body's local frame.
+
+    `asset_cfg.body_ids[0]` selects the body (e.g. waist link or torso).
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    body_ang_vel_b = math_utils.quat_apply_inverse(
+        asset.data.body_quat_w[:, asset_cfg.body_ids[0], :],
+        asset.data.body_ang_vel_w[:, asset_cfg.body_ids[0], :],
+    )
+    return torch.sum(torch.square(body_ang_vel_b[:, :2]), dim=1)
+
+
+def body_orientation_l2(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize tilt of an arbitrary body (e.g. torso) via projected gravity xy in its frame."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    body_orientation = math_utils.quat_apply_inverse(
+        asset.data.body_quat_w[:, asset_cfg.body_ids[0], :], asset.data.GRAVITY_VEC_W
+    )
+    return torch.sum(torch.square(body_orientation[:, :2]), dim=1)
+
+
+def body_orientation_euler(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Reward an upright body: average of exp(-|pitch|+|yaw|) and exp(-|gravity_xy|).
+
+    Output is in [0, 1]; pair with positive weight.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    body_orientation = math_utils.quat_apply_inverse(
+        asset.data.body_quat_w[:, asset_cfg.body_ids[0], :], asset.data.GRAVITY_VEC_W
+    )
+    body_euler = _get_euler_xyz(asset.data.body_quat_w[:, asset_cfg.body_ids[0], :])
+    quat_mismatch = torch.exp(-torch.sum(torch.abs(body_euler[:, 1:3]), dim=1) * 10.0)
+    orientation = torch.exp(-torch.norm(body_orientation[:, :2], dim=1) * 20.0)
+    return (quat_mismatch + orientation) / 2.0
+
+
+def body_force(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    threshold: float = 500.0,
+    max_reward: float = 400.0,
+) -> torch.Tensor:
+    """Penalize foot vertical contact force exceeding `threshold` (clamped to `max_reward`)."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    forces_z = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2].norm(dim=-1)
+    excess = (forces_z - threshold).clamp(min=0.0, max=max_reward)
+    return excess
+
+
+def feet_too_near_humanoid(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    threshold: float = 0.2,
+) -> torch.Tensor:
+    """Penalize feet being closer than `threshold` (in 3D L2 distance)."""
+    assert len(asset_cfg.body_ids) == 2, "feet_too_near_humanoid expects exactly 2 body_ids"
+    asset: Articulation = env.scene[asset_cfg.name]
+    feet_pos = asset.data.body_pos_w[:, asset_cfg.body_ids, :]
+    distance = torch.norm(feet_pos[:, 0] - feet_pos[:, 1], dim=-1)
+    return (threshold - distance).clamp(min=0.0)
+
+
+def feet_y_distance(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    target_distance: float = 0.272,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    cmd_y_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Penalize foot lateral (y) distance deviation from `target_distance` (bxi default 0.272m),
+    only when |cmd_y| < `cmd_y_threshold` (i.e. we're not commanded to sidestep).
+    """
+    assert len(asset_cfg.body_ids) == 2, "feet_y_distance expects exactly 2 body_ids"
+    asset: Articulation = env.scene[asset_cfg.name]
+    feet_w = asset.data.body_pos_w[:, asset_cfg.body_ids, :]
+    root_pos = asset.data.root_link_pos_w[:, :]
+    leftfoot = feet_w[:, 0] - root_pos
+    rightfoot = feet_w[:, 1] - root_pos
+    leftfoot_b = math_utils.quat_apply(math_utils.quat_conjugate(asset.data.root_link_quat_w), leftfoot)
+    rightfoot_b = math_utils.quat_apply(math_utils.quat_conjugate(asset.data.root_link_quat_w), rightfoot)
+    y_distance_b = torch.abs(leftfoot_b[:, 1] - rightfoot_b[:, 1] - target_distance)
+    cmd = env.command_manager.get_command(command_name)
+    y_vel_flag = torch.abs(cmd[:, 1]) < cmd_y_threshold
+    return y_distance_b * y_vel_flag.float()
+
+
+def feet_orientation_l2_body(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize feet pitch/roll when in contact (squared projected-gravity xy in foot frame)."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    asset: Articulation = env.scene[asset_cfg.name]
+    in_contact = (
+        contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+    )
+    num_feet = len(sensor_cfg.body_ids)
+    feet_quat = asset.data.body_quat_w[:, sensor_cfg.body_ids, :]
+    feet_proj_g = math_utils.quat_apply_inverse(
+        feet_quat, asset.data.GRAVITY_VEC_W.unsqueeze(1).expand(-1, num_feet, -1)
+    )
+    feet_xy_sq = torch.sum(torch.square(feet_proj_g[:, :, :2]), dim=-1)
+    return torch.sum(feet_xy_sq * in_contact.float(), dim=-1)
+
+
+def feet_orientation_euler(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Reward feet yaw alignment (exp(-|yaw|^2)). Expects exactly 2 feet bodies in `asset_cfg.body_ids`."""
+    assert len(asset_cfg.body_ids) == 2
+    asset: Articulation = env.scene[asset_cfg.name]
+    feet_euler = _get_euler_xyz(asset.data.body_quat_w[:, asset_cfg.body_ids, :])
+    rotation = torch.sum(torch.square(feet_euler[:, :, 2:3]), dim=[1, 2])
+    return torch.exp(-rotation)
+
+
+def joint_deviation_l1_zero_cmd(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    cmd_threshold: float = 0.1,
+) -> torch.Tensor:
+    """L1 joint deviation from default, only when the linear-velocity command magnitude is below threshold.
+
+    Mirrors bxi `joint_deviation_l1`.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    cmd = env.command_manager.get_command(command_name)
+    zero_flag = torch.norm(cmd[:, :2], dim=1) < cmd_threshold
+    return torch.sum(torch.abs(angle), dim=1) * zero_flag.float()
+
+
+def joint_deviation_l1_always(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Unconditional L1 deviation from default joint pos (bxi `joint_deviation_l1_always`)."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    return torch.sum(torch.abs(angle), dim=1)
+
+
+def joint_deviation_l2_cmd(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    lin_cmd_threshold: float = 0.1,
+    ang_cmd_threshold: float = 0.05,
+) -> torch.Tensor:
+    """L2 deviation from default, gated *off* when standing-but-turning, i.e.
+        skip = (|lin_cmd|<lin_thr) AND (|ang_cmd|>ang_thr).
+
+    Mirrors bxi `joint_deviation_l2`.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    cmd = env.command_manager.get_command(command_name)
+    cond1 = torch.norm(cmd[:, :2], dim=1) < lin_cmd_threshold
+    cond2 = torch.norm(cmd[:, 2:3], dim=1) > ang_cmd_threshold
+    skip = cond1 & cond2
+    return torch.sum(torch.square(angle), dim=1) * (~skip).float()
+
+
+def stand_still_joint_exp(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    command_threshold: float = 0.1,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """L1 joint-pos deviation when |lin cmd| < command_threshold (bxi `stand_still_joint_exp`)."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    cmd = env.command_manager.get_command(command_name)
+    return torch.sum(torch.abs(angle), dim=1) * (torch.norm(cmd[:, :2], dim=1) < command_threshold).float()
+
+
+def idle_when_commanded(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    cmd_threshold: float = 0.2,
+    vel_threshold: float = 0.1,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize 'commanded-but-not-moving' (lazy standing). Outputs {0, 1}; pair with negative weight."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    cmd_mag = torch.linalg.norm(cmd[:, :2], dim=-1)
+    vel_yaw = math_utils.quat_apply_inverse(
+        math_utils.yaw_quat(asset.data.root_quat_w), asset.data.root_lin_vel_w[:, :3]
+    )
+    vel_mag = torch.linalg.norm(vel_yaw[:, :2], dim=-1)
+    is_commanded = cmd_mag > cmd_threshold
+    is_idle = vel_mag < vel_threshold
+    return (is_commanded & is_idle).float()
+
+
+# ---- Gait clock + periodic rewards (bxi `gait_clock_smooth`, `gait_feet_*_perio`) ----
+
+
+def _gauss_cdf(x: torch.Tensor) -> torch.Tensor:
+    return 0.5 * (1.0 + torch.erf(x / 1.41421356237))
+
+
+def gait_clock_smooth(phase: torch.Tensor, air_ratio: torch.Tensor, delta_t: float):
+    """Smooth gait clock from bxi `gait_clock_smooth`. Returns (I_frc, I_spd) in [0, 1].
+
+    `I_frc` is the swing-phase mask, `I_spd = 1 - I_frc` is the stance-phase mask.
+    """
+    if not torch.is_tensor(air_ratio):
+        air_ratio = torch.tensor(air_ratio, device=phase.device, dtype=phase.dtype)
+    sigma = torch.as_tensor(delta_t, device=phase.device, dtype=phase.dtype).clamp(min=1e-6)
+    start = torch.zeros_like(phase)
+    end = torch.clamp(air_ratio, 1e-6, 1.0 - 1e-6)
+
+    def win(phi: torch.Tensor) -> torch.Tensor:
+        return _gauss_cdf((phi - start) / sigma) - _gauss_cdf((phi - end) / sigma)
+
+    i_swing = win(phase) + win(phase - 1.0) + win(phase + 1.0)
+    i_swing = i_swing.clamp(0.0, 1.0)
+    return i_swing, 1.0 - i_swing
+
+
+def gait_feet_frc_perio(env: ManagerBasedRLEnv, delta_t: float = 0.02) -> torch.Tensor:
+    """Reward small foot vertical force during swing phase (bxi `gait_feet_frc_perio`).
+
+    Requires env to expose `gait_phase` (N, 2), `phase_ratio` (N, 2), and
+    `avg_feet_force_per_step` (N, 2).
+    """
+    left_mask, _ = gait_clock_smooth(env.gait_phase[:, 0], env.phase_ratio[:, 0], delta_t)
+    right_mask, _ = gait_clock_smooth(env.gait_phase[:, 1], env.phase_ratio[:, 1], delta_t)
+    left = left_mask * torch.exp(-100.0 * torch.square(env.avg_feet_force_per_step[:, 0]))
+    right = right_mask * torch.exp(-100.0 * torch.square(env.avg_feet_force_per_step[:, 1]))
+    return left + right
+
+
+def gait_feet_frc_perio_penalize(env: ManagerBasedRLEnv, delta_t: float = 0.02) -> torch.Tensor:
+    """Penalize foot force > 5N during swing phase (bxi `gait_feet_frc_perio_penalize`)."""
+    left_mask, _ = gait_clock_smooth(env.gait_phase[:, 0], env.phase_ratio[:, 0], delta_t)
+    right_mask, _ = gait_clock_smooth(env.gait_phase[:, 1], env.phase_ratio[:, 1], delta_t)
+    left_f = env.avg_feet_force_per_step[:, 0]
+    right_f = env.avg_feet_force_per_step[:, 1]
+    left = left_mask * (torch.abs(left_f) > 5.0).float()
+    right = right_mask * (torch.abs(right_f) > 5.0).float()
+    return left + right
+
+
+def gait_feet_spd_perio(env: ManagerBasedRLEnv, delta_t: float = 0.02) -> torch.Tensor:
+    """Reward small foot speed during stance phase (bxi `gait_feet_spd_perio`)."""
+    _, left_mask = gait_clock_smooth(env.gait_phase[:, 0], env.phase_ratio[:, 0], delta_t)
+    _, right_mask = gait_clock_smooth(env.gait_phase[:, 1], env.phase_ratio[:, 1], delta_t)
+    left = left_mask * torch.exp(-50.0 * torch.square(env.avg_feet_speed_per_step[:, 0]))
+    right = right_mask * torch.exp(-50.0 * torch.square(env.avg_feet_speed_per_step[:, 1]))
+    return left + right

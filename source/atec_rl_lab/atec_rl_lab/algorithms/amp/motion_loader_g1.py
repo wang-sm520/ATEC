@@ -1,8 +1,11 @@
 """Motion expert dataset loader for AMP training of Unitree G1 (29 body DoF).
 
 Ported from `bx_lab_amp/rsl_rl/rsl_rl/utils/motion_loader_forg1.py` with these changes:
+- ROOT_VEL_SIZE = 6 (root_lin_vel_b 3 + root_ang_vel_b 3), placed at the front of each frame
+  to match bxi `get_amp_obs_for_expert_trans` layout
 - JOINT_POS_SIZE / JOINT_VEL_SIZE: 21 -> 29 (G1 body 29 DoF)
 - END_EFFECTOR_POS_SIZE kept at 15 (5 EE x 3: left_ankle, right_ankle, waist, left_wrist, right_wrist)
+- FRAME_DIM = 6 + 29 + 29 + 15 = 79
 - Replaced deprecated `np.int` with `np.int64`
 - Cleaner public API for use with the new rsl-rl-lib 3.0.1 AMPPPO
 """
@@ -27,23 +30,27 @@ class MotionLoaderG1:
         - "MotionWeight"    : float, sampling weight relative to other clips
         - "LoopMode"        : "Wrap" | "Clamp" (currently informational only)
 
-    Frame layout per row (FRAME_DIM = 73):
-        [0  : 29) joint positions (29 body dof in atec_rl_lab joint order)
-        [29 : 58) joint velocities (29 body dof, same order)
-        [58 : 73) end-effector positions (5 EE x 3): left_ankle, right_ankle, waist, left_wrist, right_wrist
+    Frame layout per row (FRAME_DIM = 79):
+        [0  :  6) root_vel_b: [root_lin_vel_b(3), root_ang_vel_b(3)] in pelvis frame
+        [6  : 35) joint positions (29 body dof in atec_rl_lab joint order, RAW)
+        [35 : 64) joint velocities (29 body dof, same order)
+        [64 : 79) end-effector positions (5 EE x 3): left_ankle, right_ankle, waist, left_wrist, right_wrist
     """
 
+    ROOT_VEL_SIZE = 6
     JOINT_POS_SIZE = 29
     JOINT_VEL_SIZE = 29
     END_EFFECTOR_POS_SIZE = 15
 
-    JOINT_POS_START_IDX = 0
+    ROOT_VEL_START_IDX = 0
+    ROOT_VEL_END_IDX = ROOT_VEL_START_IDX + ROOT_VEL_SIZE
+    JOINT_POS_START_IDX = ROOT_VEL_END_IDX
     JOINT_POS_END_IDX = JOINT_POS_START_IDX + JOINT_POS_SIZE
     JOINT_VEL_START_IDX = JOINT_POS_END_IDX
     JOINT_VEL_END_IDX = JOINT_VEL_START_IDX + JOINT_VEL_SIZE
     END_POS_START_IDX = JOINT_VEL_END_IDX
     END_POS_END_IDX = END_POS_START_IDX + END_EFFECTOR_POS_SIZE
-    FRAME_DIM = END_POS_END_IDX  # 73
+    FRAME_DIM = END_POS_END_IDX  # 79
 
     def __init__(
         self,
@@ -200,11 +207,11 @@ if __name__ == "__main__":
         preload_transitions=True,
         num_preload_transitions=1024,
     )
-    assert loader.observation_dim == 73, f"got {loader.observation_dim}"
+    assert loader.observation_dim == 79, f"got {loader.observation_dim}"
     gen = loader.feed_forward_generator(num_mini_batch=2, mini_batch_size=64)
     for i, (s, s_next) in enumerate(gen):
-        assert s.shape == (64, 73)
-        assert s_next.shape == (64, 73)
+        assert s.shape == (64, 79)
+        assert s_next.shape == (64, 79)
         print(f"batch {i}: s.shape={tuple(s.shape)} s_next.shape={tuple(s_next.shape)} ok")
     os.unlink(path)
     print("MotionLoaderG1 sanity check passed.")

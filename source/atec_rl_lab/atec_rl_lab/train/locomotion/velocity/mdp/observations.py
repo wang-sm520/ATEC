@@ -32,16 +32,23 @@ def amp_obs_g1(
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     ee_body_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Return the 73-dim AMP observation for G1: `[jp_rel(29), jv(29), ee_pos_b(15)]`.
+    """Return the 79-dim AMP observation for G1.
 
-    `asset_cfg.joint_ids` selects the 29 body DoF (must match motion-loader joint order).
-    `ee_body_cfg.body_ids` selects the 5 end-effector links (left_ankle, right_ankle, waist, left_wrist, right_wrist).
-    End-effector positions are expressed in the robot's base frame (translation- and yaw-invariant).
+    Layout: `[root_lin_vel_b(3), root_ang_vel_b(3), jp(29), jv(29), ee_pos_b(15)]`
+
+    Notes (aligned with bxi `get_amp_obs_for_expert_trans`):
+      - `jp` is RAW joint_pos (NOT relative to default), matching the retargeted motion JSON.
+      - `root_lin_vel_b` / `root_ang_vel_b` give the discriminator gross body motion (so it can
+        distinguish standing-and-twitching from real forward locomotion).
+      - End-effector positions are expressed in the robot's base frame (translation- and yaw-invariant).
     """
     asset: Articulation = env.scene[asset_cfg.name]
     joint_ids = asset_cfg.joint_ids
-    jp = asset.data.joint_pos[:, joint_ids] - asset.data.default_joint_pos[:, joint_ids]
+    jp = asset.data.joint_pos[:, joint_ids]
     jv = asset.data.joint_vel[:, joint_ids]
+
+    root_lin_vel_b = asset.data.root_lin_vel_b                   # (N, 3)
+    root_ang_vel_b = asset.data.root_ang_vel_b                   # (N, 3)
 
     body_ids = ee_body_cfg.body_ids
     ee_pos_w = asset.data.body_pos_w[:, body_ids, :]            # (N, K, 3)
@@ -53,7 +60,7 @@ def amp_obs_g1(
     quat_flat = root_quat_w.unsqueeze(1).expand(-1, num_ee, -1).reshape(-1, 4)
     pos_flat = rel_pos_w.reshape(-1, 3)
     rel_pos_b = math_utils.quat_apply_inverse(quat_flat, pos_flat).reshape(num_envs, num_ee * 3)
-    return torch.cat([jp, jv, rel_pos_b], dim=-1)
+    return torch.cat([root_lin_vel_b, root_ang_vel_b, jp, jv, rel_pos_b], dim=-1)
 
 
 def phase(env: ManagerBasedRLEnv, cycle_time: float) -> torch.Tensor:

@@ -101,7 +101,8 @@ git lfs pull
 
 ```bash
 cd ATEC2026_Simulation_Challenge
-python scripts/list_envs.py
+
+
 ```
 
 Successful execution will list all registered environments, confirming correct module loading.

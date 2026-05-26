@@ -3,12 +3,13 @@
 Pipeline:
     LAFAN1 BVH → GMR `bvh_to_robot.py --robot unitree_g1 --save_path X.pkl` → THIS SCRIPT → X.json
 
-The output JSON matches `MotionLoaderG1.FRAME_DIM = 73` and is consumed by AMPPPO.
+The output JSON matches `MotionLoaderG1.FRAME_DIM = 79` and is consumed by AMPPPO.
 
-Each frame layout (73 floats):
-    [0  : 29) joint_pos       (in `G1_BODY_29_JOINT_NAMES` order, == GMR mujoco joint order)
-    [29 : 58) joint_vel       (finite-difference of dof_pos, scaled by `fps`)
-    [58 : 73) ee_pos_in_base  (5 EE bodies × 3, expressed in the pelvis frame)
+Each frame layout (79 floats):
+    [0  :  6) root_vel_b      [root_lin_vel_b(3), root_ang_vel_b(3)] in pelvis frame
+    [6  : 35) joint_pos       (in `G1_BODY_29_JOINT_NAMES` order, == GMR mujoco joint order; RAW)
+    [35 : 64) joint_vel       (finite-difference of dof_pos, scaled by `fps`)
+    [64 : 79) ee_pos_in_base  (5 EE bodies × 3, expressed in the pelvis frame)
 
 EE bodies (must match `G1_AMP_EE_BODIES` in `rough_env_cfg.py`):
     left_ankle_roll_link, right_ankle_roll_link, waist_yaw_link, left_wrist_yaw_link, right_wrist_yaw_link
@@ -74,6 +75,52 @@ def compute_ee_in_base(
     return rel
 
 
+def _quat_wxyz_to_rotmat(q: np.ndarray) -> np.ndarray:
+    """Convert (N, 4) wxyz quaternion to (N, 3, 3) rotation matrix."""
+    qw, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    n = q.shape[0]
+    R = np.zeros((n, 3, 3), dtype=q.dtype)
+    R[:, 0, 0] = 1 - 2 * (qy * qy + qz * qz)
+    R[:, 0, 1] = 2 * (qx * qy - qz * qw)
+    R[:, 0, 2] = 2 * (qx * qz + qy * qw)
+    R[:, 1, 0] = 2 * (qx * qy + qz * qw)
+    R[:, 1, 1] = 1 - 2 * (qx * qx + qz * qz)
+    R[:, 1, 2] = 2 * (qy * qz - qx * qw)
+    R[:, 2, 0] = 2 * (qx * qz - qy * qw)
+    R[:, 2, 1] = 2 * (qy * qz + qx * qw)
+    R[:, 2, 2] = 1 - 2 * (qx * qx + qy * qy)
+    return R
+
+
+def _quat_wxyz_to_omega(q: np.ndarray, dt: float) -> np.ndarray:
+    """Body-frame angular velocity (N, 3) from a (N, 4) wxyz quaternion sequence.
+
+    Uses adjacent-frame relative rotation: q_rel = q_curr^{-1} ⊗ q_next.
+    Then ω ≈ 2 * vec(q_rel) / dt (small-angle approx, valid for typical mocap fps).
+    First frame replicated to keep length consistent.
+    """
+    n = q.shape[0]
+    out = np.zeros((n, 3), dtype=q.dtype)
+    if n < 2:
+        return out
+    # q_inv(curr) ⊗ q(next)
+    qw, qx, qy, qz = q[:-1, 0], q[:-1, 1], q[:-1, 2], q[:-1, 3]
+    pw, px, py, pz = q[1:, 0], q[1:, 1], q[1:, 2], q[1:, 3]
+    # q_curr_conj = (qw, -qx, -qy, -qz); Hamilton product (q_conj) ⊗ p:
+    rw = qw * pw + qx * px + qy * py + qz * pz
+    rx = qw * px - qx * pw - qy * pz + qz * py
+    ry = qw * py + qx * pz - qy * pw - qz * px
+    rz = qw * pz - qx * py + qy * px - qz * pw
+    # ensure shortest-arc (positive scalar)
+    sign = np.where(rw < 0.0, -1.0, 1.0).astype(q.dtype)
+    rx, ry, rz = rx * sign, ry * sign, rz * sign
+    out[1:, 0] = 2.0 * rx / dt
+    out[1:, 1] = 2.0 * ry / dt
+    out[1:, 2] = 2.0 * rz / dt
+    out[0] = out[1]
+    return out
+
+
 def convert(
     pkl_path: Path,
     output_path: Path,
@@ -124,8 +171,22 @@ def convert(
     for i in range(n):
         ee_pos_b[i] = compute_ee_in_base(model, data, root_pos[i], root_rot[i], dof_pos[i], root_id, ee_ids)
 
-    frames = np.concatenate([dof_pos, jvel, ee_pos_b], axis=1)  # (N, 73)
-    assert frames.shape[1] == 73
+    # ---- Root velocities in pelvis frame ----
+    # World-frame linear velocity from finite difference, then rotate to pelvis frame.
+    root_lin_vel_w = np.zeros_like(root_pos)
+    if n > 1:
+        root_lin_vel_w[1:] = (root_pos[1:] - root_pos[:-1]) / dt
+        root_lin_vel_w[0] = root_lin_vel_w[1]
+    R = _quat_wxyz_to_rotmat(root_rot)            # (N, 3, 3) world<-body
+    # body-frame lin vel = R^T @ v_world (per frame, batched)
+    root_lin_vel_b = np.einsum("nij,nj->ni", np.transpose(R, (0, 2, 1)), root_lin_vel_w).astype(np.float32)
+    # Angular velocity from quaternion difference, expressed in body frame directly.
+    root_ang_vel_b = _quat_wxyz_to_omega(root_rot, dt).astype(np.float32)
+
+    root_vel_b = np.concatenate([root_lin_vel_b, root_ang_vel_b], axis=1)  # (N, 6)
+
+    frames = np.concatenate([root_vel_b, dof_pos, jvel, ee_pos_b], axis=1)  # (N, 79)
+    assert frames.shape[1] == 79
 
     out = {
         "LoopMode": loop_mode,
@@ -141,7 +202,9 @@ def convert(
     print(
         f"[gmr_to_amp_json] Wrote {n} frames @ {fps:.1f} fps -> {output_path} "
         f"(jp range: [{dof_pos.min():.3f}, {dof_pos.max():.3f}], "
-        f"ee_pos range: [{ee_pos_b.min():.3f}, {ee_pos_b.max():.3f}])"
+        f"ee_pos range: [{ee_pos_b.min():.3f}, {ee_pos_b.max():.3f}], "
+        f"root_lin_vel_b range: [{root_lin_vel_b.min():.3f}, {root_lin_vel_b.max():.3f}], "
+        f"root_ang_vel_b range: [{root_ang_vel_b.min():.3f}, {root_ang_vel_b.max():.3f}])"
     )
 
 

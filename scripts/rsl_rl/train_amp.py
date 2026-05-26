@@ -47,7 +47,7 @@ parser.add_argument(
 )
 parser.add_argument("--amp_reward_coef", type=float, default=0.3)              # bxi
 parser.add_argument("--amp_task_reward_lerp", type=float, default=0.6)         # bxi
-parser.add_argument("--amp_obs_dim", type=int, default=73, help="AMP obs dim; auto-overridden by env's obs['amp'] if present.")
+parser.add_argument("--amp_obs_dim", type=int, default=79, help="AMP obs dim; auto-overridden by env's obs['amp'] if present.")
 parser.add_argument("--amp_replay_buffer_size", type=int, default=100000)      # bxi
 parser.add_argument("--amp_num_preload_transitions", type=int, default=200000) # bxi
 parser.add_argument("--amp_loss_coef", type=float, default=1.0)                # bxi (amploss_coef)

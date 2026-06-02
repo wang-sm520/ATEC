@@ -65,31 +65,66 @@ class UnitreeG1AMPTaskAEnvCfg(UnitreeG1AMPRoughEnvCfg):
                 # `terrain_sequence=None` => BetterTerrainGenerator falls back to
                 # proportion-based random tile selection (suitable for parallel training).
                 terrain_sequence=None,
+                # === 旧地形配置 (flat=30 / rough=30 / stairs=20 / stairs_inv=20) — 暂时注释保留 ===
+                # sub_terrains={
+                #     # User-requested proportions (slopes removed): flat=30, rough=30,
+                #     # stairs (up)=20, stairs (inv/down)=20. Sum = 100 -> no normalization quirk.
+                #     "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.30),
+                #     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+                #         proportion=0.30,
+                #         noise_range=(0.02, 0.10),
+                #         noise_step=0.02,
+                #         border_width=0.25,
+                #     ),
+                #     "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
+                #         proportion=0.20,
+                #         step_height_range=(0.05, 0.20),
+                #         step_width=0.3,
+                #         platform_width=3.0,
+                #         border_width=1.0,
+                #         holes=False,
+                #     ),
+                #     "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+                #         proportion=0.20,
+                #         step_height_range=(0.05, 0.20),
+                #         step_width=0.3,
+                #         platform_width=3.0,
+                #         border_width=1.0,
+                #         holes=False,
+                #     ),
+                # },
+                # === 地形配置 v2 (flat=30 / rough=50 / slope=20, 台阶去除) — 暂时注释保留 ===
+                # 坡 20% 拆成上坡 10% + 下坡 10%, 类型/参数对齐 Task A 真评测
+                # (tasks/task_a/terrain.py: HfPyramidSlopedTerrainCfg, slope≈0.4)。 Sum = 100。
+                # sub_terrains={
+                #     "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.30),
+                #     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+                #         proportion=0.50,
+                #         noise_range=(0.02, 0.10),
+                #         noise_step=0.02,
+                #         border_width=0.25,
+                #     ),
+                #     "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+                #         proportion=0.10,
+                #         slope_range=(0.39, 0.40),
+                #         platform_width=2.5,
+                #         border_width=0.25,
+                #     ),
+                #     "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
+                #         proportion=0.10,
+                #         slope_range=(0.39, 0.40),
+                #         platform_width=2.5,
+                #         border_width=0.25,
+                #     ),
+                # },
+                # === 地形配置 v3 (flat=40 / rough=60, 坡/台阶去除) ===  Sum = 100。
                 sub_terrains={
-                    # User-requested proportions (slopes removed): flat=30, rough=30,
-                    # stairs (up)=20, stairs (inv/down)=20. Sum = 100 -> no normalization quirk.
-                    "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.30),
+                    "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.40),
                     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-                        proportion=0.30,
+                        proportion=0.60,
                         noise_range=(0.02, 0.10),
                         noise_step=0.02,
                         border_width=0.25,
-                    ),
-                    "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-                        proportion=0.20,
-                        step_height_range=(0.05, 0.20),
-                        step_width=0.3,
-                        platform_width=3.0,
-                        border_width=1.0,
-                        holes=False,
-                    ),
-                    "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-                        proportion=0.20,
-                        step_height_range=(0.05, 0.20),
-                        step_width=0.3,
-                        platform_width=3.0,
-                        border_width=1.0,
-                        holes=False,
                     ),
                 },
             ),

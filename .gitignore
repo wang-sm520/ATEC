@@ -1,4 +1,5 @@
 logs/
+outputs/
 __pycache__/
 *.pyc
 atec_robot_model/baseline/act/policy.pt

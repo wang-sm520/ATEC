@@ -139,27 +139,46 @@ class G1AMPObservationsCfg:
 
     @configclass
     class PolicyCfg(ObsGroup):
+        # base_ang_vel = ObsTerm(
+        #     func=mdp.base_ang_vel, noise=Unoise(n_min=-0.2, n_max=0.2), clip=(-100.0, 100.0), scale=1.0
+        # )
+        # velocity_commands = ObsTerm(
+        #     func=mdp.generated_commands, params={"command_name": "base_velocity"}, clip=(-100.0, 100.0), scale=1.0
+        # )
+        # projected_gravity = ObsTerm(
+        #     func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05), clip=(-100.0, 100.0), scale=1.0
+        # )
+        # joint_pos = ObsTerm(
+        #     func=mdp.joint_pos_rel,
+        #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=G1_BODY_29_JOINT_NAMES, preserve_order=True)},
+        #     noise=Unoise(n_min=-0.01, n_max=0.01), clip=(-100.0, 100.0), scale=1.0,
+        # )
+        # joint_vel = ObsTerm(
+        #     func=mdp.joint_vel_rel,
+        #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=G1_BODY_29_JOINT_NAMES, preserve_order=True)},
+        #     noise=Unoise(n_min=-1.5, n_max=1.5), clip=(-100.0, 100.0), scale=1.0,
+        # )
+        # actions = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0)
         base_ang_vel = ObsTerm(
-            func=mdp.base_ang_vel, noise=Unoise(n_min=-0.2, n_max=0.2), clip=(-100.0, 100.0), scale=1.0
+            func=mdp.base_ang_vel, noise=Unoise(n_min=0.0, n_max=0.0), clip=(-100.0, 100.0), scale=1.0
         )
         velocity_commands = ObsTerm(
             func=mdp.generated_commands, params={"command_name": "base_velocity"}, clip=(-100.0, 100.0), scale=1.0
         )
         projected_gravity = ObsTerm(
-            func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05), clip=(-100.0, 100.0), scale=1.0
+            func=mdp.projected_gravity, noise=Unoise(n_min=0.0, n_max=0.0), clip=(-100.0, 100.0), scale=1.0
         )
         joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=G1_BODY_29_JOINT_NAMES, preserve_order=True)},
-            noise=Unoise(n_min=-0.01, n_max=0.01), clip=(-100.0, 100.0), scale=1.0,
+            noise=Unoise(n_min=0.0, n_max=0.0), clip=(-100.0, 100.0), scale=1.0,
         )
         joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=G1_BODY_29_JOINT_NAMES, preserve_order=True)},
-            noise=Unoise(n_min=-1.5, n_max=1.5), clip=(-100.0, 100.0), scale=1.0,
+            noise=Unoise(n_min=0.0, n_max=0.0), clip=(-100.0, 100.0), scale=1.0,
         )
         actions = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0)
-
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
@@ -411,7 +430,7 @@ class UnitreeG1AMPRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.randomize_reset_joints.params["position_range"] = (0.5, 1.5)
         self.events.randomize_reset_joints.params["velocity_range"] = (0.0, 0.0)
         # Push robot: disabled (zero range; EventTerm still fires every 10-15s but is a no-op)
-        self.events.randomize_push_robot.params["velocity_range"] = {"x": (0.0, 0.0), "y": (0.0, 0.0)}
+        self.events.randomize_push_robot.params["velocity_range"] = {"x": (-0.1, 0.3), "y": (-0.1, 0.1)}
 
         # ---- Rewards: replace cfg with extended G1AMPRewardsCfg, then set bxi weights ----
         self.rewards = G1AMPRewardsCfg()
@@ -511,7 +530,7 @@ class UnitreeG1AMPRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.curriculum.command_levels_ang_vel = None
 
         # ---- Commands: bxi BXDof29WalkFlatEnvCfg ranges ----
-        self.commands.base_velocity.ranges.lin_vel_x = (-0.6, 1.0)
+        self.commands.base_velocity.ranges.lin_vel_x = (1.0, 2.0)
         self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)
         self.commands.base_velocity.ranges.ang_vel_z = (-1.57, 1.57)
         # Narrow heading sampling so env mostly trains small-angle corrections (Task A eval cmd≈0).

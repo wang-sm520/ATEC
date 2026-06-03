@@ -530,7 +530,7 @@ class UnitreeG1AMPRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.curriculum.command_levels_ang_vel = None
 
         # ---- Commands: bxi BXDof29WalkFlatEnvCfg ranges ----
-        self.commands.base_velocity.ranges.lin_vel_x = (1.0, 2.0)
+        self.commands.base_velocity.ranges.lin_vel_x = (-0.6.0, 2.0)
         self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)
         self.commands.base_velocity.ranges.ang_vel_z = (-1.57, 1.57)
         # Narrow heading sampling so env mostly trains small-angle corrections (Task A eval cmd≈0).

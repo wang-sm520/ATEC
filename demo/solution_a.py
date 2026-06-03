@@ -46,7 +46,7 @@ class AlgSolution:
 
     # `FIXED_VELOCITY_CMD[0]` = forward speed (yaw frame); [1] (lateral) is fixed 0;
     # [2] (yaw rate) is computed by the heading P-controller below — do NOT hard-wire it.
-    FIXED_VELOCITY_CMD = (1.5, 0.0, 0.0)
+    FIXED_VELOCITY_CMD = (1.0, 0.0, 0.0)
 
     # ---- Heading P-controller (mirrors training-time heading_command=True) -------------
     HEADING_TARGET = 0.0           # target heading in world frame, 0 = +x along corridor

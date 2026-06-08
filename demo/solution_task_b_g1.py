@@ -280,8 +280,12 @@ class TaskBPlanner:
         score_delta = float(current_score) - self.prev_score
         self.prev_score = float(current_score)
         if score_delta > 0.0 and self.active_detection is not None:
-            self.touched_track_ids.add(self.active_detection.track_id)
-            if self.phase in ("touch_object", "push_to_goal"):
+            if self.phase == "touch_object":
+                self.touched_track_ids.add(self.active_detection.track_id)
+                self.phase = "verify_or_next"
+                self.phase_steps = 0
+            elif self.phase == "push_to_goal":
+                self.placed_track_ids.add(self.active_detection.track_id)
                 self.phase = "verify_or_next"
                 self.phase_steps = 0
 
@@ -295,6 +299,7 @@ class TaskBPlanner:
             return self._search_output(pose)
 
         if self.phase == "approach_object":
+            self.phase_steps += 1
             det = self._refresh_active_detection(detections)
             if det is None:
                 self.phase = "search"

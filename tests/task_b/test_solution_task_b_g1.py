@@ -131,6 +131,17 @@ class TaskBPlannerTest(unittest.TestCase):
         self.assertEqual(out.phase, "approach_object")
         self.assertEqual(out.target_world, (-9.0, -10.0))
 
+    def test_approach_expires_stale_detection_after_missing_frames(self):
+        planner = sol.TaskBPlanner()
+        planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
+
+        out = None
+        for _ in range(31):
+            out = planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [], current_score=0.0)
+
+        self.assertEqual(out.phase, "search")
+        self.assertIsNone(planner.active_detection)
+
     def test_close_detection_enters_touch_phase(self):
         planner = sol.TaskBPlanner()
         planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
@@ -149,6 +160,24 @@ class TaskBPlannerTest(unittest.TestCase):
         out = planner.step(sol.Pose2D(-9.35, -10.0, 0.0), [self.detection(distance=0.35)], current_score=1.0)
         self.assertEqual(out.phase, "verify_or_next")
         self.assertIn(1, planner.touched_track_ids)
+
+    def test_push_score_marks_placed_without_new_touch(self):
+        planner = sol.TaskBPlanner()
+        pose = sol.Pose2D(-6.95, -10.0, 0.0)
+        det = self.detection(track_id=7, world=(-6.5, -10.0), rel=(0.45, 0.0), distance=0.45)
+        planner.step(pose, [det], current_score=0.0)
+        planner.step(pose, [det], current_score=0.0)
+        out = None
+        for _ in range(41):
+            out = planner.step(pose, [det], current_score=0.0)
+        self.assertEqual(out.phase, "push_to_goal")
+        self.assertNotIn(7, planner.touched_track_ids)
+
+        out = planner.step(pose, [det], current_score=1.0)
+
+        self.assertEqual(out.phase, "verify_or_next")
+        self.assertIn(7, planner.placed_track_ids)
+        self.assertNotIn(7, planner.touched_track_ids)
 
 
 if __name__ == "__main__":

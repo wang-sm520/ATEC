@@ -179,8 +179,8 @@ class G1VelocityPolicyBridge:
 
         policy_input = torch.cat(
             [
-                self._buf_cmd.reshape(-1),
                 self._buf_ang_vel.reshape(-1),
+                self._buf_cmd.reshape(-1),
                 self._buf_gravity.reshape(-1),
                 self._buf_jp.reshape(-1),
                 self._buf_jv.reshape(-1),

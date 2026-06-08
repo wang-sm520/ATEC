@@ -64,7 +64,7 @@ class G1VelocityPolicyBridgeTest(unittest.TestCase):
         self.assertEqual(len(action), 33)
         self.assertEqual(len(fake.calls), 1)
         self.assertEqual(tuple(fake.calls[0].shape), (1, 960))
-        cmd_slice = fake.calls[0][0, 30 - 3:30]
+        cmd_slice = fake.calls[0][0, 30 + 30 - 3:30 + 30]
         self.assertTrue(torch.allclose(cmd_slice, torch.tensor([0.25, 0.0, 0.1])))
 
     def test_reset_clears_history_buffers(self):

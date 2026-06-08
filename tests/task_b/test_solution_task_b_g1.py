@@ -161,6 +161,35 @@ class TaskBPlannerTest(unittest.TestCase):
         self.assertEqual(out.phase, "verify_or_next")
         self.assertIn(1, planner.touched_track_ids)
 
+    def test_touch_expires_stale_detection_after_missing_frames(self):
+        planner = sol.TaskBPlanner()
+        planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
+        planner.step(sol.Pose2D(-9.45, -10.0, 0.0), [self.detection(distance=0.45)], current_score=0.0)
+
+        out = None
+        for _ in range(31):
+            out = planner.step(sol.Pose2D(-9.45, -10.0, 0.0), [], current_score=0.0)
+
+        self.assertEqual(out.phase, "verify_or_next")
+        self.assertEqual(out.arm_mode, "stow")
+
+    def test_push_expires_stale_detection_after_missing_frames(self):
+        planner = sol.TaskBPlanner()
+        pose = sol.Pose2D(-6.95, -10.0, 0.0)
+        det = self.detection(track_id=7, world=(-6.5, -10.0), rel=(0.45, 0.0), distance=0.45)
+        planner.step(pose, [det], current_score=0.0)
+        planner.step(pose, [det], current_score=0.0)
+        out = None
+        for _ in range(41):
+            out = planner.step(pose, [det], current_score=0.0)
+        self.assertEqual(out.phase, "push_to_goal")
+
+        for _ in range(31):
+            out = planner.step(pose, [], current_score=0.0)
+
+        self.assertEqual(out.phase, "verify_or_next")
+        self.assertEqual(out.arm_mode, "stow")
+
     def test_push_score_marks_placed_without_new_touch(self):
         planner = sol.TaskBPlanner()
         pose = sol.Pose2D(-6.95, -10.0, 0.0)

@@ -314,7 +314,7 @@ class TaskBPlanner:
             return self._approach_output(pose, det)
 
         if self.phase == "touch_object":
-            det = self._refresh_active_detection(detections) or self.active_detection
+            det = self._refresh_active_detection(detections)
             self.phase_steps += 1
             if det is None or self.phase_steps > 120:
                 self.phase = "verify_or_next"
@@ -328,7 +328,7 @@ class TaskBPlanner:
             return PlannerOutput("touch_object", self._face_and_creep(det), "left_touch", (det.world_x, det.world_y))
 
         if self.phase == "push_to_goal":
-            det = self._refresh_active_detection(detections) or self.active_detection
+            det = self._refresh_active_detection(detections)
             self.phase_steps += 1
             if det is None or self.phase_steps > 180:
                 self.phase = "verify_or_next"

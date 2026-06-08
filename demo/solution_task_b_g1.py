@@ -416,6 +416,53 @@ class TaskBPlanner:
         return vx, vy, wz
 
 
+class LocalObjectInteraction:
+    """Conservative G1 upper-body action override.
+
+    Action indices follow UNITREE_G1_29DOF_DEX1_CFG.joint_names:
+    left arm 15..21, right arm 22..28, hands 29..32. The action space uses
+    default-offset joint position targets scaled by 0.5, so these are small
+    normalized offsets rather than absolute joint angles.
+    """
+
+    LEFT_TOUCH = {
+        15: 0.28,   # left_shoulder_pitch_joint
+        16: 0.18,   # left_shoulder_roll_joint
+        17: 0.00,   # left_shoulder_yaw_joint
+        18: 0.22,   # left_elbow_joint
+        19: 0.00,
+        20: -0.08,
+        21: 0.00,
+        29: 0.20,
+        30: 0.20,
+    }
+    LEFT_PUSH = {
+        15: 0.38,
+        16: 0.20,
+        17: 0.00,
+        18: 0.32,
+        19: 0.00,
+        20: -0.10,
+        21: 0.00,
+        29: 0.25,
+        30: 0.25,
+    }
+
+    def apply_arm_override(self, action: Sequence[float], arm_mode: str) -> list[float]:
+        out = [float(v) for v in action]
+        if arm_mode == "left_touch":
+            self._apply(out, self.LEFT_TOUCH)
+        elif arm_mode == "left_push":
+            self._apply(out, self.LEFT_PUSH)
+        return out
+
+    @staticmethod
+    def _apply(action: list[float], values: dict[int, float]) -> None:
+        for idx, value in values.items():
+            if idx < len(action):
+                action[idx] = float(value)
+
+
 class AlgSolution:
     """Temporary shell. Later tasks replace this with the full controller."""
 

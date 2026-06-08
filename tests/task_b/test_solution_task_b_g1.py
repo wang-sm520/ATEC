@@ -230,5 +230,30 @@ class TaskBPlannerTest(unittest.TestCase):
         self.assertNotEqual(out.target_world, (det.world_x, det.world_y))
 
 
+class LocalObjectInteractionTest(unittest.TestCase):
+    def test_stow_leaves_action_unchanged(self):
+        interaction = sol.LocalObjectInteraction()
+        action = [0.1] * 33
+        out = interaction.apply_arm_override(action, "stow")
+        self.assertEqual(out, action)
+
+    def test_left_touch_overrides_left_arm_and_hands_only(self):
+        interaction = sol.LocalObjectInteraction()
+        action = [0.1] * 33
+        out = interaction.apply_arm_override(action, "left_touch")
+        changed = {i for i, (a, b) in enumerate(zip(action, out)) if a != b}
+        self.assertTrue({15, 16, 17, 18, 19, 20, 21}.issubset(changed))
+        self.assertTrue({29, 30}.issubset(changed))
+        self.assertNotIn(0, changed)
+        self.assertNotIn(6, changed)
+
+    def test_left_push_uses_more_forward_pose_than_left_touch(self):
+        interaction = sol.LocalObjectInteraction()
+        touch = interaction.apply_arm_override([0.0] * 33, "left_touch")
+        push = interaction.apply_arm_override([0.0] * 33, "left_push")
+        self.assertGreaterEqual(push[15], touch[15])
+        self.assertGreaterEqual(push[18], touch[18])
+
+
 if __name__ == "__main__":
     unittest.main()

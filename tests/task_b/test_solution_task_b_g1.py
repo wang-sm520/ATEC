@@ -179,6 +179,27 @@ class TaskBPlannerTest(unittest.TestCase):
         self.assertIn(7, planner.placed_track_ids)
         self.assertNotIn(7, planner.touched_track_ids)
 
+    def test_search_skips_already_placed_detection(self):
+        planner = sol.TaskBPlanner()
+        pose = sol.Pose2D(-6.95, -10.0, 0.0)
+        det = self.detection(track_id=7, world=(-6.5, -10.0), rel=(0.45, 0.0), distance=0.45)
+        planner.step(pose, [det], current_score=0.0)
+        planner.step(pose, [det], current_score=0.0)
+        for _ in range(41):
+            planner.step(pose, [det], current_score=0.0)
+        planner.step(pose, [det], current_score=1.0)
+        self.assertIn(7, planner.placed_track_ids)
+
+        out = None
+        for _ in range(20):
+            out = planner.step(pose, [], current_score=1.0)
+        self.assertEqual(out.phase, "search")
+
+        out = planner.step(pose, [det], current_score=1.0)
+
+        self.assertEqual(out.phase, "search")
+        self.assertNotEqual(out.target_world, (det.world_x, det.world_y))
+
 
 if __name__ == "__main__":
     unittest.main()

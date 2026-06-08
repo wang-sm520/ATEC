@@ -351,7 +351,8 @@ class TaskBPlanner:
         return self._search_output(pose)
 
     def _choose_detection(self, detections: list[Detection]) -> Detection | None:
-        candidates = [d for d in detections if d.track_id not in self.touched_track_ids and d.confidence >= 0.2]
+        completed_track_ids = self.touched_track_ids | self.placed_track_ids
+        candidates = [d for d in detections if d.track_id not in completed_track_ids and d.confidence >= 0.2]
         if not candidates:
             return None
         return min(candidates, key=lambda d: (d.distance, -d.confidence))

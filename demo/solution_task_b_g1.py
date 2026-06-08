@@ -463,10 +463,13 @@ class LocalObjectInteraction:
                 action[idx] = float(value)
 
 
+_HEAD_CAMERA_HFOV_DEG = math.degrees(2.0 * math.atan(20.955 / (2.0 * 24.0)))
+
+
 class TaskBRgbdPerception:
     def __init__(
         self,
-        hfov_deg: float = 70.0,
+        hfov_deg: float = _HEAD_CAMERA_HFOV_DEG,
         min_pixels: int = 35,
         max_depth: float = 8.0,
         track_match_dist: float = 0.75,
@@ -502,6 +505,7 @@ class TaskBRgbdPerception:
         mask = self._colored_object_mask(rgb[..., :3], depth)
         components = self._components(mask)
         detections: list[Detection] = []
+        used_track_ids: set[int] = set()
         for pixels in components:
             if len(pixels) < self.min_pixels:
                 continue
@@ -511,15 +515,15 @@ class TaskBRgbdPerception:
             x0, x1 = min(xs), max(xs)
             cy = int(round(sum(ys) / len(ys)))
             cx = int(round(sum(xs) / len(xs)))
-            local_depth = depth[y0:y1 + 1, x0:x1 + 1]
-            finite = torch.isfinite(local_depth) & (local_depth > 0.05) & (local_depth < self.max_depth)
+            pixel_depth = depth[torch.as_tensor(ys, dtype=torch.long), torch.as_tensor(xs, dtype=torch.long)]
+            finite = torch.isfinite(pixel_depth) & (pixel_depth > 0.05) & (pixel_depth < self.max_depth)
             if not bool(finite.any()):
                 continue
-            dist = float(local_depth[finite].median().item())
+            dist = float(pixel_depth[finite].median().item())
             rel_x, rel_y = self._pixel_to_robot_xy(cx, rgb.shape[1], dist)
             world_x = pose.x + math.cos(pose.yaw) * rel_x - math.sin(pose.yaw) * rel_y
             world_y = pose.y + math.sin(pose.yaw) * rel_x + math.cos(pose.yaw) * rel_y
-            track_id = self._assign_track(world_x, world_y)
+            track_id = self._assign_track(world_x, world_y, used_track_ids)
             confidence = _clamp(len(pixels) / 250.0, 0.05, 1.0)
             detections.append(
                 Detection(
@@ -560,24 +564,27 @@ class TaskBRgbdPerception:
 
     @staticmethod
     def _components(mask) -> list[list[tuple[int, int]]]:
-        h, w = int(mask.shape[0]), int(mask.shape[1])
-        visited = torch.zeros((h, w), dtype=torch.bool)
+        coords_tensor = mask.nonzero(as_tuple=False)
+        if coords_tensor.numel() == 0:
+            return []
+        max_component_pixels = 20000
+        if coords_tensor.shape[0] > max_component_pixels:
+            step = int(math.ceil(float(coords_tensor.shape[0]) / float(max_component_pixels)))
+            coords_tensor = coords_tensor[::step]
+        true_pixels = {(int(y), int(x)) for y, x in coords_tensor.tolist()}
         components: list[list[tuple[int, int]]] = []
-        for y in range(h):
-            for x in range(w):
-                if visited[y, x] or not bool(mask[y, x]):
-                    continue
-                stack = [(y, x)]
-                visited[y, x] = True
-                pixels: list[tuple[int, int]] = []
-                while stack:
-                    cy, cx = stack.pop()
-                    pixels.append((cy, cx))
-                    for ny, nx in ((cy - 1, cx), (cy + 1, cx), (cy, cx - 1), (cy, cx + 1)):
-                        if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx] and bool(mask[ny, nx]):
-                            visited[ny, nx] = True
-                            stack.append((ny, nx))
-                components.append(pixels)
+        while true_pixels:
+            start = true_pixels.pop()
+            stack = [start]
+            pixels = [start]
+            while stack:
+                cy, cx = stack.pop()
+                for neighbor in ((cy - 1, cx), (cy + 1, cx), (cy, cx - 1), (cy, cx + 1)):
+                    if neighbor in true_pixels:
+                        true_pixels.remove(neighbor)
+                        stack.append(neighbor)
+                        pixels.append(neighbor)
+            components.append(pixels)
         return components
 
     def _pixel_to_robot_xy(self, cx: int, width: int, depth: float) -> tuple[float, float]:
@@ -587,18 +594,25 @@ class TaskBRgbdPerception:
         rel_y = math.tan(lateral_angle) * float(depth)
         return rel_x, rel_y
 
-    def _assign_track(self, world_x: float, world_y: float) -> int:
+    def _assign_track(self, world_x: float, world_y: float, used_track_ids: set[int] | None = None) -> int:
+        if used_track_ids is None:
+            used_track_ids = set()
         best_id = None
         best_dist = self.track_match_dist
         for track_id, (tx, ty) in self.tracks.items():
+            if track_id in used_track_ids:
+                continue
             d = math.hypot(world_x - tx, world_y - ty)
             if d < best_dist:
                 best_dist = d
                 best_id = track_id
         if best_id is None:
             best_id = self.next_track_id
-            self.next_track_id += 1
+            while best_id in used_track_ids or best_id in self.tracks:
+                best_id += 1
+            self.next_track_id = best_id + 1
         self.tracks[best_id] = (world_x, world_y)
+        used_track_ids.add(best_id)
         return best_id
 
 

@@ -255,6 +255,31 @@ class LocalObjectInteractionTest(unittest.TestCase):
         self.assertGreaterEqual(push[18], touch[18])
 
 
+class TaskBRgbdPerceptionHelperTest(unittest.TestCase):
+    def test_default_hfov_matches_head_camera_config_lateral_scale(self):
+        perception = sol.TaskBRgbdPerception()
+        expected_hfov = 2.0 * math.atan(20.955 / (2.0 * 24.0))
+        self.assertAlmostEqual(perception.hfov, expected_hfov, places=6)
+
+        rel_x, rel_y = perception._pixel_to_robot_xy(cx=95, width=96, depth=1.0)
+        edge_x_norm = (95.5 / 96.0) - 0.5
+        self.assertAlmostEqual(rel_x, 1.0)
+        self.assertAlmostEqual(rel_y, math.tan(edge_x_norm * expected_hfov), places=6)
+
+    def test_assign_track_reserves_used_ids_within_frame(self):
+        perception = sol.TaskBRgbdPerception(track_match_dist=1.0)
+        perception.tracks[7] = (0.0, 0.0)
+        perception.next_track_id = 8
+        used_track_ids = set()
+
+        first = perception._assign_track(0.1, 0.0, used_track_ids)
+        second = perception._assign_track(0.2, 0.0, used_track_ids)
+
+        self.assertEqual(first, 7)
+        self.assertEqual(second, 8)
+        self.assertEqual(used_track_ids, {7, 8})
+
+
 @unittest.skipIf(torch is None, "torch is not installed in this Python environment")
 class TaskBRgbdPerceptionTest(unittest.TestCase):
     def make_image_obs(self):
@@ -286,6 +311,49 @@ class TaskBRgbdPerceptionTest(unittest.TestCase):
         first = perception.update(self.make_image_obs(), sol.Pose2D(-10.0, -10.0, 0.0))[0]
         second = perception.update(self.make_image_obs(), sol.Pose2D(-10.0, -10.0, 0.0))[0]
         self.assertEqual(first.track_id, second.track_id)
+
+    def test_distance_uses_only_colored_component_pixels(self):
+        rgb = torch.zeros((1, 16, 16, 3), dtype=torch.uint8)
+        depth = torch.full((1, 16, 16, 1), 7.0, dtype=torch.float32)
+        depth[0, 3:12, 3:12, 0] = 0.4
+        border = []
+        for y in range(3, 12):
+            border.append((y, 3))
+            border.append((y, 11))
+        for x in range(4, 11):
+            border.append((3, x))
+            border.append((11, x))
+        for y, x in border:
+            rgb[0, y, x, 0] = 230
+            rgb[0, y, x, 1] = 190
+            rgb[0, y, x, 2] = 30
+            depth[0, y, x, 0] = 2.0
+
+        perception = sol.TaskBRgbdPerception(min_pixels=20)
+        detections = perception.update({"head_rgb": rgb, "head_depth": depth}, sol.Pose2D(-10.0, -10.0, 0.0))
+
+        self.assertEqual(len(detections), 1)
+        self.assertAlmostEqual(detections[0].distance, 2.0, delta=0.1)
+
+    def test_two_same_frame_components_get_distinct_track_ids(self):
+        rgb = torch.zeros((1, 16, 16, 3), dtype=torch.uint8)
+        depth = torch.full((1, 16, 16, 1), 2.0, dtype=torch.float32)
+        rgb[0, 4:7, 4:7, 0] = 230
+        rgb[0, 4:7, 4:7, 1] = 190
+        rgb[0, 4:7, 4:7, 2] = 30
+        rgb[0, 4:7, 9:12, 0] = 230
+        rgb[0, 4:7, 9:12, 1] = 190
+        rgb[0, 4:7, 9:12, 2] = 30
+        perception = sol.TaskBRgbdPerception(min_pixels=4, track_match_dist=10.0)
+        perception.tracks[5] = (-8.0, -10.0)
+        perception.next_track_id = 6
+
+        detections = perception.update({"head_rgb": rgb, "head_depth": depth}, sol.Pose2D(-10.0, -10.0, 0.0))
+        track_ids = [det.track_id for det in detections]
+
+        self.assertEqual(len(track_ids), 2)
+        self.assertEqual(len(set(track_ids)), 2)
+        self.assertIn(5, track_ids)
 
 
 if __name__ == "__main__":

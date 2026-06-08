@@ -207,6 +207,48 @@ class G1VelocityPolicyBridge:
         return action_full[0].detach().cpu().tolist()
 
 
+class DeadReckoningOdometry:
+    def __init__(self, dt: float = 0.02, x0: float = -10.0, y0: float = -10.0, yaw0: float = 0.0):
+        self.dt = float(dt)
+        self.x0 = float(x0)
+        self.y0 = float(y0)
+        self.yaw0 = float(yaw0)
+        self.reset()
+
+    def reset(self) -> Pose2D:
+        self.x = self.x0
+        self.y = self.y0
+        self.yaw = self.yaw0
+        self.vx_b = 0.0
+        self.vy_b = 0.0
+        return self.pose
+
+    @property
+    def pose(self) -> Pose2D:
+        return Pose2D(self.x, self.y, self.yaw)
+
+    @staticmethod
+    def _normalized(v: list[float]) -> list[float]:
+        n = math.sqrt(sum(c * c for c in v))
+        return [0.0, 0.0, 1.0] if n <= 1e-8 else [c / n for c in v]
+
+    def update(self, proprio_row: Sequence[float]) -> Pose2D:
+        lin = [_as_float(proprio_row[i]) for i in range(0, 3)]
+        ang = [_as_float(proprio_row[i]) for i in range(3, 6)]
+        grav = [_as_float(proprio_row[i]) for i in range(9, 12)]
+        up = self._normalized([-grav[0], -grav[1], -grav[2]])
+        yaw_rate = sum(a * u for a, u in zip(ang, up))
+
+        c = math.cos(self.yaw)
+        s = math.sin(self.yaw)
+        self.x += (c * lin[0] - s * lin[1]) * self.dt
+        self.y += (s * lin[0] + c * lin[1]) * self.dt
+        self.yaw = _wrap_to_pi(self.yaw + yaw_rate * self.dt)
+        self.vx_b = lin[0]
+        self.vy_b = lin[1]
+        return self.pose
+
+
 class AlgSolution:
     """Temporary shell. Later tasks replace this with the full controller."""
 

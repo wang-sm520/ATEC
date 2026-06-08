@@ -76,5 +76,33 @@ class G1VelocityPolicyBridgeTest(unittest.TestCase):
         self.assertEqual(float(bridge._buf_cmd.abs().sum()), 0.0)
 
 
+class DeadReckoningOdometryTest(unittest.TestCase):
+    def make_row(self, vx=0.0, vy=0.0, yaw_rate=0.0):
+        row = [0.0] * (12 + 3 * 33)
+        row[0] = vx
+        row[1] = vy
+        row[3:6] = [0.0, 0.0, yaw_rate]
+        row[9:12] = [0.0, 0.0, -1.0]
+        return row
+
+    def test_integrates_body_velocity_in_world_frame(self):
+        odom = sol.DeadReckoningOdometry(dt=0.02, x0=-10.0, y0=-10.0)
+        pose = odom.update(self.make_row(vx=1.0, vy=0.0))
+        self.assertAlmostEqual(pose.x, -9.98, places=5)
+        self.assertAlmostEqual(pose.y, -10.0, places=5)
+        self.assertAlmostEqual(pose.yaw, 0.0, places=5)
+
+    def test_integrates_yaw_rate_projected_on_up_axis(self):
+        odom = sol.DeadReckoningOdometry(dt=0.02, x0=-10.0, y0=-10.0)
+        pose = odom.update(self.make_row(yaw_rate=1.0))
+        self.assertAlmostEqual(pose.yaw, 0.02, places=5)
+
+    def test_reset_restores_initial_pose(self):
+        odom = sol.DeadReckoningOdometry(dt=0.02, x0=-10.0, y0=-10.0)
+        odom.update(self.make_row(vx=1.0, yaw_rate=1.0))
+        pose = odom.reset()
+        self.assertEqual(pose, sol.Pose2D(-10.0, -10.0, 0.0))
+
+
 if __name__ == "__main__":
     unittest.main()

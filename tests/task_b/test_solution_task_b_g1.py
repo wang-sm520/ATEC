@@ -104,5 +104,52 @@ class DeadReckoningOdometryTest(unittest.TestCase):
         self.assertEqual(pose, sol.Pose2D(-10.0, -10.0, 0.0))
 
 
+class TaskBPlannerTest(unittest.TestCase):
+    def detection(self, track_id=1, world=(-9.0, -10.0), rel=(1.0, 0.0), distance=1.0):
+        return sol.Detection(
+            track_id=track_id,
+            label="object",
+            rel_x=rel[0],
+            rel_y=rel[1],
+            distance=distance,
+            confidence=0.9,
+            world_x=world[0],
+            world_y=world[1],
+            bbox=(10, 10, 20, 20),
+        )
+
+    def test_search_drives_toward_first_waypoint_without_detections(self):
+        planner = sol.TaskBPlanner()
+        out = planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [], current_score=0.0)
+        self.assertEqual(out.phase, "search")
+        self.assertEqual(out.arm_mode, "stow")
+        self.assertEqual(len(out.command), 3)
+
+    def test_detection_interrupts_search_and_enters_approach(self):
+        planner = sol.TaskBPlanner()
+        out = planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
+        self.assertEqual(out.phase, "approach_object")
+        self.assertEqual(out.target_world, (-9.0, -10.0))
+
+    def test_close_detection_enters_touch_phase(self):
+        planner = sol.TaskBPlanner()
+        planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
+        out = planner.step(
+            sol.Pose2D(-9.45, -10.0, 0.0),
+            [self.detection(world=(-9.0, -10.0), rel=(0.45, 0.0), distance=0.45)],
+            current_score=0.0,
+        )
+        self.assertEqual(out.phase, "touch_object")
+        self.assertEqual(out.arm_mode, "left_touch")
+
+    def test_score_delta_marks_contact_and_verifies_next(self):
+        planner = sol.TaskBPlanner()
+        planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
+        planner.step(sol.Pose2D(-9.45, -10.0, 0.0), [self.detection(distance=0.45)], current_score=0.0)
+        out = planner.step(sol.Pose2D(-9.35, -10.0, 0.0), [self.detection(distance=0.35)], current_score=1.0)
+        self.assertEqual(out.phase, "verify_or_next")
+        self.assertIn(1, planner.touched_track_ids)
+
+
 if __name__ == "__main__":
     unittest.main()

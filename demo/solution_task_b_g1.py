@@ -249,6 +249,167 @@ class DeadReckoningOdometry:
         return self.pose
 
 
+class TaskBPlanner:
+    TARGET_CENTER = (-3.0, -10.0)
+    SEARCH_WAYPOINTS = (
+        (-14.0, -14.0, 0.0),
+        (-6.0, -14.0, 0.0),
+        (-6.0, -12.0, math.pi),
+        (-14.0, -12.0, math.pi),
+        (-14.0, -10.0, 0.0),
+        (-6.0, -10.0, 0.0),
+        (-6.0, -8.0, math.pi),
+        (-14.0, -8.0, math.pi),
+        (-14.0, -6.0, 0.0),
+        (-6.0, -6.0, 0.0),
+    )
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self.phase = "search"
+        self.waypoint_idx = 0
+        self.active_detection: Detection | None = None
+        self.touched_track_ids: set[int] = set()
+        self.placed_track_ids: set[int] = set()
+        self.prev_score = 0.0
+        self.phase_steps = 0
+
+    def step(self, pose: Pose2D, detections: list[Detection], current_score: float) -> PlannerOutput:
+        score_delta = float(current_score) - self.prev_score
+        self.prev_score = float(current_score)
+        if score_delta > 0.0 and self.active_detection is not None:
+            self.touched_track_ids.add(self.active_detection.track_id)
+            if self.phase in ("touch_object", "push_to_goal"):
+                self.phase = "verify_or_next"
+                self.phase_steps = 0
+
+        if self.phase == "search":
+            fresh = self._choose_detection(detections)
+            if fresh is not None:
+                self.active_detection = fresh
+                self.phase = "approach_object"
+                self.phase_steps = 0
+                return self._approach_output(pose, fresh)
+            return self._search_output(pose)
+
+        if self.phase == "approach_object":
+            det = self._refresh_active_detection(detections)
+            if det is None:
+                self.phase = "search"
+                self.active_detection = None
+                self.phase_steps = 0
+                return self._search_output(pose)
+            self.active_detection = det
+            if det.distance <= 0.55:
+                self.phase = "touch_object"
+                self.phase_steps = 0
+                return PlannerOutput("touch_object", self._face_and_creep(det), "left_touch", (det.world_x, det.world_y))
+            return self._approach_output(pose, det)
+
+        if self.phase == "touch_object":
+            det = self._refresh_active_detection(detections) or self.active_detection
+            self.phase_steps += 1
+            if det is None or self.phase_steps > 120:
+                self.phase = "verify_or_next"
+                self.phase_steps = 0
+                return PlannerOutput("verify_or_next", (0.0, 0.0, 0.0), "stow", None)
+            if self._near_target((det.world_x, det.world_y), max_distance=4.0):
+                if self.phase_steps > 40:
+                    self.phase = "push_to_goal"
+                    self.phase_steps = 0
+                    return self._push_output(pose, det)
+            return PlannerOutput("touch_object", self._face_and_creep(det), "left_touch", (det.world_x, det.world_y))
+
+        if self.phase == "push_to_goal":
+            det = self._refresh_active_detection(detections) or self.active_detection
+            self.phase_steps += 1
+            if det is None or self.phase_steps > 180:
+                self.phase = "verify_or_next"
+                self.phase_steps = 0
+                return PlannerOutput("verify_or_next", (0.0, 0.0, 0.0), "stow", None)
+            return self._push_output(pose, det)
+
+        if self.phase == "verify_or_next":
+            self.phase_steps += 1
+            if self.phase_steps >= 20:
+                self.active_detection = None
+                self.phase = "search"
+                self.phase_steps = 0
+                return self._search_output(pose)
+            return PlannerOutput("verify_or_next", (0.0, 0.0, 0.0), "stow", None)
+
+        self.phase = "search"
+        self.active_detection = None
+        self.phase_steps = 0
+        return self._search_output(pose)
+
+    def _choose_detection(self, detections: list[Detection]) -> Detection | None:
+        candidates = [d for d in detections if d.track_id not in self.touched_track_ids and d.confidence >= 0.2]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda d: (d.distance, -d.confidence))
+
+    def _refresh_active_detection(self, detections: list[Detection]) -> Detection | None:
+        if self.active_detection is None:
+            return None
+        for det in detections:
+            if det.track_id == self.active_detection.track_id:
+                return det
+        if self.phase_steps < 30:
+            return self.active_detection
+        return None
+
+    def _search_output(self, pose: Pose2D) -> PlannerOutput:
+        wp = self.SEARCH_WAYPOINTS[self.waypoint_idx]
+        if pose.distance_to((wp[0], wp[1])) < 0.45:
+            self.waypoint_idx = (self.waypoint_idx + 1) % len(self.SEARCH_WAYPOINTS)
+            wp = self.SEARCH_WAYPOINTS[self.waypoint_idx]
+        return PlannerOutput("search", self._drive_to(pose, wp[0], wp[1], wp[2], 0.35), "stow", (wp[0], wp[1]))
+
+    def _approach_output(self, pose: Pose2D, det: Detection) -> PlannerOutput:
+        bearing = pose.bearing_to((det.world_x, det.world_y))
+        standoff = 0.42
+        tx = det.world_x - standoff * math.cos(bearing)
+        ty = det.world_y - standoff * math.sin(bearing)
+        return PlannerOutput("approach_object", self._drive_to(pose, tx, ty, bearing, 0.28), "stow", (det.world_x, det.world_y))
+
+    def _push_output(self, pose: Pose2D, det: Detection) -> PlannerOutput:
+        desired_yaw = math.atan2(self.TARGET_CENTER[1] - det.world_y, self.TARGET_CENTER[0] - det.world_x)
+        yaw_err = _wrap_to_pi(desired_yaw - pose.yaw)
+        vx = 0.18 if abs(yaw_err) < 0.45 else 0.0
+        wz = _clamp(1.8 * yaw_err, -0.7, 0.7)
+        return PlannerOutput("push_to_goal", (vx, 0.0, wz), "left_push", (det.world_x, det.world_y))
+
+    @staticmethod
+    def _near_target(xy: tuple[float, float], max_distance: float) -> bool:
+        return math.hypot(xy[0] - TaskBPlanner.TARGET_CENTER[0], xy[1] - TaskBPlanner.TARGET_CENTER[1]) <= max_distance
+
+    @staticmethod
+    def _face_and_creep(det: Detection) -> tuple[float, float, float]:
+        yaw_err = math.atan2(det.rel_y, max(det.rel_x, 1e-6))
+        vx = 0.10 if abs(yaw_err) < 0.35 else 0.0
+        return vx, 0.0, _clamp(2.0 * yaw_err, -0.5, 0.5)
+
+    @staticmethod
+    def _drive_to(pose: Pose2D, tx: float, ty: float, tyaw: float, max_vx: float) -> tuple[float, float, float]:
+        ex = tx - pose.x
+        ey = ty - pose.y
+        c = math.cos(pose.yaw)
+        s = math.sin(pose.yaw)
+        body_x = c * ex + s * ey
+        body_y = -s * ex + c * ey
+        yaw_err = _wrap_to_pi(tyaw - pose.yaw)
+        vx = _clamp(0.9 * body_x, -0.18, max_vx)
+        vy = _clamp(0.8 * body_y, -0.22, 0.22)
+        wz = _clamp(1.8 * yaw_err, -0.7, 0.7)
+        if abs(yaw_err) > 0.9:
+            vx = min(vx, 0.05)
+            vy = _clamp(vy, -0.08, 0.08)
+        return vx, vy, wz
+
+
 class AlgSolution:
     """Temporary shell. Later tasks replace this with the full controller."""
 

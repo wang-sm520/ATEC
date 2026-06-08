@@ -255,5 +255,38 @@ class LocalObjectInteractionTest(unittest.TestCase):
         self.assertGreaterEqual(push[18], touch[18])
 
 
+@unittest.skipIf(torch is None, "torch is not installed in this Python environment")
+class TaskBRgbdPerceptionTest(unittest.TestCase):
+    def make_image_obs(self):
+        rgb = torch.zeros((1, 64, 96, 3), dtype=torch.uint8)
+        depth = torch.full((1, 64, 96, 1), 4.0, dtype=torch.float32)
+        rgb[0, 28:38, 44:54, 0] = 230
+        rgb[0, 28:38, 44:54, 1] = 190
+        rgb[0, 28:38, 44:54, 2] = 30
+        depth[0, 28:38, 44:54, 0] = 2.0
+        return {"head_rgb": rgb, "head_depth": depth}
+
+    def test_detects_synthetic_colored_blob(self):
+        perception = sol.TaskBRgbdPerception(min_pixels=20)
+        detections = perception.update(self.make_image_obs(), sol.Pose2D(-10.0, -10.0, 0.0))
+        self.assertEqual(len(detections), 1)
+        det = detections[0]
+        self.assertEqual(det.label, "colored_object")
+        self.assertGreater(det.confidence, 0.2)
+        self.assertAlmostEqual(det.distance, 2.0, delta=0.1)
+        self.assertGreater(det.world_x, -10.0)
+
+    def test_returns_empty_when_no_image_keys_exist(self):
+        perception = sol.TaskBRgbdPerception(min_pixels=20)
+        detections = perception.update({}, sol.Pose2D(-10.0, -10.0, 0.0))
+        self.assertEqual(detections, [])
+
+    def test_tracks_same_blob_with_stable_id(self):
+        perception = sol.TaskBRgbdPerception(min_pixels=20)
+        first = perception.update(self.make_image_obs(), sol.Pose2D(-10.0, -10.0, 0.0))[0]
+        second = perception.update(self.make_image_obs(), sol.Pose2D(-10.0, -10.0, 0.0))[0]
+        self.assertEqual(first.track_id, second.track_id)
+
+
 if __name__ == "__main__":
     unittest.main()

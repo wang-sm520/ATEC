@@ -463,6 +463,145 @@ class LocalObjectInteraction:
                 action[idx] = float(value)
 
 
+class TaskBRgbdPerception:
+    def __init__(
+        self,
+        hfov_deg: float = 70.0,
+        min_pixels: int = 35,
+        max_depth: float = 8.0,
+        track_match_dist: float = 0.75,
+    ):
+        self.hfov = math.radians(float(hfov_deg))
+        self.min_pixels = int(min_pixels)
+        self.max_depth = float(max_depth)
+        self.track_match_dist = float(track_match_dist)
+        self.next_track_id = 1
+        self.tracks: dict[int, tuple[float, float]] = {}
+
+    def reset(self) -> None:
+        self.next_track_id = 1
+        self.tracks.clear()
+
+    def update(self, image_obs: dict, pose: Pose2D) -> list[Detection]:
+        if torch is None:
+            return []
+        rgb, depth = self._extract_head_rgbd(image_obs)
+        if rgb is None or depth is None:
+            return []
+        rgb = rgb.detach().float().cpu()
+        depth = depth.detach().float().cpu()
+        if rgb.ndim == 4:
+            rgb = rgb[0]
+        if depth.ndim == 4:
+            depth = depth[0]
+        if depth.ndim == 3 and depth.shape[-1] == 1:
+            depth = depth[..., 0]
+        if rgb.ndim != 3 or rgb.shape[-1] < 3 or depth.ndim != 2:
+            return []
+
+        mask = self._colored_object_mask(rgb[..., :3], depth)
+        components = self._components(mask)
+        detections: list[Detection] = []
+        for pixels in components:
+            if len(pixels) < self.min_pixels:
+                continue
+            ys = [p[0] for p in pixels]
+            xs = [p[1] for p in pixels]
+            y0, y1 = min(ys), max(ys)
+            x0, x1 = min(xs), max(xs)
+            cy = int(round(sum(ys) / len(ys)))
+            cx = int(round(sum(xs) / len(xs)))
+            local_depth = depth[y0:y1 + 1, x0:x1 + 1]
+            finite = torch.isfinite(local_depth) & (local_depth > 0.05) & (local_depth < self.max_depth)
+            if not bool(finite.any()):
+                continue
+            dist = float(local_depth[finite].median().item())
+            rel_x, rel_y = self._pixel_to_robot_xy(cx, rgb.shape[1], dist)
+            world_x = pose.x + math.cos(pose.yaw) * rel_x - math.sin(pose.yaw) * rel_y
+            world_y = pose.y + math.sin(pose.yaw) * rel_x + math.cos(pose.yaw) * rel_y
+            track_id = self._assign_track(world_x, world_y)
+            confidence = _clamp(len(pixels) / 250.0, 0.05, 1.0)
+            detections.append(
+                Detection(
+                    track_id=track_id,
+                    label="colored_object",
+                    rel_x=rel_x,
+                    rel_y=rel_y,
+                    distance=dist,
+                    confidence=confidence,
+                    world_x=world_x,
+                    world_y=world_y,
+                    bbox=(x0, y0, x1, y1),
+                )
+            )
+        detections.sort(key=lambda d: (d.distance, -d.confidence))
+        return detections[:5]
+
+    @staticmethod
+    def _extract_head_rgbd(image_obs: dict):
+        if not isinstance(image_obs, dict):
+            return None, None
+        rgb = image_obs.get("head_rgb")
+        depth = image_obs.get("head_depth")
+        return rgb, depth
+
+    def _colored_object_mask(self, rgb, depth):
+        r = rgb[..., 0]
+        g = rgb[..., 1]
+        b = rgb[..., 2]
+        maxc = torch.maximum(torch.maximum(r, g), b)
+        minc = torch.minimum(torch.minimum(r, g), b)
+        saturation = maxc - minc
+        yellow = (r > 120.0) & (g > 90.0) & (b < 130.0)
+        red_or_orange = (r > 130.0) & (g > 45.0) & (b < 150.0) & (r > b + 35.0)
+        bright_colored = (maxc > 110.0) & (saturation > 45.0)
+        depth_ok = torch.isfinite(depth) & (depth > 0.15) & (depth < self.max_depth)
+        return (yellow | red_or_orange | bright_colored) & depth_ok
+
+    @staticmethod
+    def _components(mask) -> list[list[tuple[int, int]]]:
+        h, w = int(mask.shape[0]), int(mask.shape[1])
+        visited = torch.zeros((h, w), dtype=torch.bool)
+        components: list[list[tuple[int, int]]] = []
+        for y in range(h):
+            for x in range(w):
+                if visited[y, x] or not bool(mask[y, x]):
+                    continue
+                stack = [(y, x)]
+                visited[y, x] = True
+                pixels: list[tuple[int, int]] = []
+                while stack:
+                    cy, cx = stack.pop()
+                    pixels.append((cy, cx))
+                    for ny, nx in ((cy - 1, cx), (cy + 1, cx), (cy, cx - 1), (cy, cx + 1)):
+                        if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx] and bool(mask[ny, nx]):
+                            visited[ny, nx] = True
+                            stack.append((ny, nx))
+                components.append(pixels)
+        return components
+
+    def _pixel_to_robot_xy(self, cx: int, width: int, depth: float) -> tuple[float, float]:
+        x_norm = (float(cx) + 0.5) / max(float(width), 1.0) - 0.5
+        lateral_angle = x_norm * self.hfov
+        rel_x = float(depth)
+        rel_y = math.tan(lateral_angle) * float(depth)
+        return rel_x, rel_y
+
+    def _assign_track(self, world_x: float, world_y: float) -> int:
+        best_id = None
+        best_dist = self.track_match_dist
+        for track_id, (tx, ty) in self.tracks.items():
+            d = math.hypot(world_x - tx, world_y - ty)
+            if d < best_dist:
+                best_dist = d
+                best_id = track_id
+        if best_id is None:
+            best_id = self.next_track_id
+            self.next_track_id += 1
+        self.tracks[best_id] = (world_x, world_y)
+        return best_id
+
+
 class AlgSolution:
     """Temporary shell. Later tasks replace this with the full controller."""
 

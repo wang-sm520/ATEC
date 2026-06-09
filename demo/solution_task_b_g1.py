@@ -501,6 +501,8 @@ class TaskBRgbdPerception:
             depth = depth[..., 0]
         if rgb.ndim != 3 or rgb.shape[-1] < 3 or depth.ndim != 2:
             return []
+        if tuple(rgb.shape[:2]) != tuple(depth.shape[:2]):
+            return []
 
         mask = self._colored_object_mask(rgb[..., :3], depth)
         components = self._components(mask)
@@ -515,7 +517,9 @@ class TaskBRgbdPerception:
             x0, x1 = min(xs), max(xs)
             cy = int(round(sum(ys) / len(ys)))
             cx = int(round(sum(xs) / len(xs)))
-            pixel_depth = depth[torch.as_tensor(ys, dtype=torch.long), torch.as_tensor(xs, dtype=torch.long)]
+            y_idx = torch.as_tensor(ys, dtype=torch.long)
+            x_idx = torch.as_tensor(xs, dtype=torch.long)
+            pixel_depth = depth[y_idx, x_idx]
             finite = torch.isfinite(pixel_depth) & (pixel_depth > 0.05) & (pixel_depth < self.max_depth)
             if not bool(finite.any()):
                 continue
@@ -523,6 +527,8 @@ class TaskBRgbdPerception:
             rel_x, rel_y = self._pixel_to_robot_xy(cx, rgb.shape[1], dist)
             world_x = pose.x + math.cos(pose.yaw) * rel_x - math.sin(pose.yaw) * rel_y
             world_y = pose.y + math.sin(pose.yaw) * rel_x + math.cos(pose.yaw) * rel_y
+            if self._is_large_target_background(rgb[..., :3], y_idx, x_idx, x0, y0, x1, y1, world_x, world_y):
+                continue
             track_id = self._assign_track(world_x, world_y, used_track_ids)
             confidence = _clamp(len(pixels) / 250.0, 0.05, 1.0)
             detections.append(
@@ -563,14 +569,26 @@ class TaskBRgbdPerception:
         return (yellow | red_or_orange | bright_colored) & depth_ok
 
     @staticmethod
+    def _is_large_target_background(rgb, ys, xs, x0: int, y0: int, x1: int, y1: int, world_x: float, world_y: float) -> bool:
+        height = int(rgb.shape[0])
+        width = int(rgb.shape[1])
+        bbox_area = max(1, (int(x1) - int(x0) + 1) * (int(y1) - int(y0) + 1))
+        frame_area = max(1, width * height)
+        if bbox_area < 0.45 * frame_area:
+            return False
+        r = rgb[ys, xs, 0]
+        g = rgb[ys, xs, 1]
+        b = rgb[ys, xs, 2]
+        orange_red = (r > 150.0) & (g > 40.0) & (g < 160.0) & (b < 120.0) & (r > g + 40.0)
+        if float(orange_red.float().mean().item()) < 0.7:
+            return False
+        return TaskBPlanner._near_target((world_x, world_y), max_distance=1.0)
+
+    @staticmethod
     def _components(mask) -> list[list[tuple[int, int]]]:
         coords_tensor = mask.nonzero(as_tuple=False)
         if coords_tensor.numel() == 0:
             return []
-        max_component_pixels = 20000
-        if coords_tensor.shape[0] > max_component_pixels:
-            step = int(math.ceil(float(coords_tensor.shape[0]) / float(max_component_pixels)))
-            coords_tensor = coords_tensor[::step]
         true_pixels = {(int(y), int(x)) for y, x in coords_tensor.tolist()}
         components: list[list[tuple[int, int]]] = []
         while true_pixels:
@@ -591,7 +609,7 @@ class TaskBRgbdPerception:
         x_norm = (float(cx) + 0.5) / max(float(width), 1.0) - 0.5
         lateral_angle = x_norm * self.hfov
         rel_x = float(depth)
-        rel_y = math.tan(lateral_angle) * float(depth)
+        rel_y = -math.tan(lateral_angle) * float(depth)
         return rel_x, rel_y
 
     def _assign_track(self, world_x: float, world_y: float, used_track_ids: set[int] | None = None) -> int:

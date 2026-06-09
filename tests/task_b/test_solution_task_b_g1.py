@@ -261,10 +261,17 @@ class TaskBRgbdPerceptionHelperTest(unittest.TestCase):
         expected_hfov = 2.0 * math.atan(20.955 / (2.0 * 24.0))
         self.assertAlmostEqual(perception.hfov, expected_hfov, places=6)
 
-        rel_x, rel_y = perception._pixel_to_robot_xy(cx=95, width=96, depth=1.0)
-        edge_x_norm = (95.5 / 96.0) - 0.5
-        self.assertAlmostEqual(rel_x, 1.0)
-        self.assertAlmostEqual(rel_y, math.tan(edge_x_norm * expected_hfov), places=6)
+        right_rel_x, right_rel_y = perception._pixel_to_robot_xy(cx=95, width=96, depth=1.0)
+        right_edge_x_norm = (95.5 / 96.0) - 0.5
+        self.assertAlmostEqual(right_rel_x, 1.0)
+        self.assertAlmostEqual(right_rel_y, -math.tan(right_edge_x_norm * expected_hfov), places=6)
+
+        left_rel_x, left_rel_y = perception._pixel_to_robot_xy(cx=0, width=96, depth=1.0)
+        left_edge_x_norm = (0.5 / 96.0) - 0.5
+        self.assertAlmostEqual(left_rel_x, 1.0)
+        self.assertAlmostEqual(left_rel_y, -math.tan(left_edge_x_norm * expected_hfov), places=6)
+        self.assertGreater(left_rel_y, 0.0)
+        self.assertLess(right_rel_y, 0.0)
 
     def test_assign_track_reserves_used_ids_within_frame(self):
         perception = sol.TaskBRgbdPerception(track_match_dist=1.0)
@@ -301,9 +308,43 @@ class TaskBRgbdPerceptionTest(unittest.TestCase):
         self.assertAlmostEqual(det.distance, 2.0, delta=0.1)
         self.assertGreater(det.world_x, -10.0)
 
+    def test_suppresses_large_target_colored_blob_but_keeps_small_blob(self):
+        pose = sol.Pose2D(-5.0, -10.0, 0.0)
+        large_rgb = torch.zeros((1, 64, 96, 3), dtype=torch.uint8)
+        large_depth = torch.full((1, 64, 96, 1), 2.0, dtype=torch.float32)
+        large_rgb[0, 5:59, 8:88, 0] = 230
+        large_rgb[0, 5:59, 8:88, 1] = 90
+        large_rgb[0, 5:59, 8:88, 2] = 20
+
+        large_detections = sol.TaskBRgbdPerception(min_pixels=20).update(
+            {"head_rgb": large_rgb, "head_depth": large_depth}, pose
+        )
+
+        self.assertEqual(large_detections, [])
+
+        small_rgb = torch.zeros((1, 64, 96, 3), dtype=torch.uint8)
+        small_depth = torch.full((1, 64, 96, 1), 2.0, dtype=torch.float32)
+        small_rgb[0, 28:38, 44:54, 0] = 230
+        small_rgb[0, 28:38, 44:54, 1] = 90
+        small_rgb[0, 28:38, 44:54, 2] = 20
+        small_detections = sol.TaskBRgbdPerception(min_pixels=20).update(
+            {"head_rgb": small_rgb, "head_depth": small_depth}, pose
+        )
+
+        self.assertEqual(len(small_detections), 1)
+
     def test_returns_empty_when_no_image_keys_exist(self):
         perception = sol.TaskBRgbdPerception(min_pixels=20)
         detections = perception.update({}, sol.Pose2D(-10.0, -10.0, 0.0))
+        self.assertEqual(detections, [])
+
+    def test_returns_empty_when_rgb_depth_spatial_sizes_mismatch(self):
+        rgb = torch.zeros((1, 64, 96, 3), dtype=torch.uint8)
+        depth = torch.full((1, 32, 48, 1), 2.0, dtype=torch.float32)
+        perception = sol.TaskBRgbdPerception(min_pixels=20)
+
+        detections = perception.update({"head_rgb": rgb, "head_depth": depth}, sol.Pose2D(-10.0, -10.0, 0.0))
+
         self.assertEqual(detections, [])
 
     def test_tracks_same_blob_with_stable_id(self):
@@ -354,6 +395,18 @@ class TaskBRgbdPerceptionTest(unittest.TestCase):
         self.assertEqual(len(track_ids), 2)
         self.assertEqual(len(set(track_ids)), 2)
         self.assertIn(5, track_ids)
+
+    def test_large_contiguous_mask_does_not_fragment_into_many_tracks(self):
+        rgb = torch.zeros((1, 180, 180, 3), dtype=torch.uint8)
+        depth = torch.full((1, 180, 180, 1), 2.0, dtype=torch.float32)
+        rgb[0, :, :, 0] = 230
+        rgb[0, :, :, 1] = 190
+        rgb[0, :, :, 2] = 30
+        perception = sol.TaskBRgbdPerception(min_pixels=20)
+
+        detections = perception.update({"head_rgb": rgb, "head_depth": depth}, sol.Pose2D(-20.0, -20.0, 0.0))
+
+        self.assertLessEqual(len(detections), 1)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if int(args.max_steps) <= 0:
         parser.error("--max_steps must be a positive integer")
+    if int(args.num_envs) != 1:
+        parser.error("--num_envs must be 1 for this single-solution evaluator")
 
 
 def _is_tensor_like(value: Any) -> bool:
@@ -80,14 +82,16 @@ def coerce_action_tensor(action: Any, num_envs: int, device: str):
     import torch
 
     tensor = torch.as_tensor(action, dtype=torch.float32, device=device)
+    expected_envs = int(num_envs)
     if tensor.ndim == 0:
         tensor = tensor.reshape(1, 1)
     elif tensor.ndim == 1:
         tensor = tensor.unsqueeze(0)
+    elif tensor.ndim == 2 and expected_envs == 1 and tensor.shape[1] == 1:
+        tensor = tensor.reshape(1, -1)
     elif tensor.ndim > 2:
         tensor = tensor.reshape(tensor.shape[0], -1)
 
-    expected_envs = int(num_envs)
     if tensor.shape[0] == expected_envs:
         return tensor.contiguous()
     if tensor.shape[0] == 1 and expected_envs > 1:

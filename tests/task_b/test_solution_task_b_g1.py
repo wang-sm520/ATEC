@@ -434,6 +434,35 @@ class AlgSolutionGlueTest(unittest.TestCase):
         def update(self, image_obs, pose):
             return self.detections
 
+    class SequencePerception:
+        def __init__(self, detection_frames):
+            self.detection_frames = list(detection_frames)
+            self.reset_calls = 0
+            self.update_calls = 0
+
+        def reset(self):
+            self.reset_calls += 1
+
+        def update(self, image_obs, pose):
+            frame_idx = min(self.update_calls, len(self.detection_frames) - 1)
+            self.update_calls += 1
+            return self.detection_frames[frame_idx]
+
+    class RecordingPlanner:
+        def __init__(self):
+            self.phase = "search"
+            self.reset_calls = 0
+            self.detection_batches = []
+
+        def reset(self):
+            self.phase = "search"
+            self.reset_calls += 1
+            self.detection_batches.clear()
+
+        def step(self, pose, detections, current_score):
+            self.detection_batches.append(list(detections))
+            return sol.PlannerOutput("record", (0.1, 0.0, 0.0), "stow", None)
+
     def make_solution_with_fakes(self, detections):
         instance = sol.AlgSolution.__new__(sol.AlgSolution)
         instance.bridge = self.FakeBridge()
@@ -448,21 +477,52 @@ class AlgSolutionGlueTest(unittest.TestCase):
         row[0, 9:12] = torch.tensor([0.0, 0.0, -1.0])
         return row
 
-    def test_predicts_returns_33_dim_action_and_no_giveup(self):
+    def assertCommandAlmostEqual(self, actual, expected):
+        self.assertEqual(len(actual), len(expected))
+        for actual_value, expected_value in zip(actual, expected):
+            self.assertAlmostEqual(actual_value, expected_value, places=6)
+
+    def test_predicts_returns_33_dim_action_no_giveup_and_uses_planner_command(self):
         det = sol.Detection(1, "object", 1.0, 0.0, 1.0, 0.9, -9.0, -10.0, (0, 0, 3, 3))
+        proprio = self.proprio()
+        expected_pose = sol.DeadReckoningOdometry().update(proprio[0])
+        expected_plan = sol.TaskBPlanner().step(expected_pose, [det], current_score=0.0)
         solution = self.make_solution_with_fakes([det])
-        out = solution.predicts({"proprio": self.proprio(), "image": {}}, current_score=0.0)
+
+        out = solution.predicts({"proprio": proprio, "image": {}}, current_score=0.0)
+
         self.assertFalse(out["giveup"])
         self.assertEqual(len(out["action"]), 33)
         self.assertEqual(len(solution.bridge.commands), 1)
+        self.assertCommandAlmostEqual(solution.bridge.commands[0], expected_plan.command)
 
-    def test_reset_resets_all_components(self):
+    def test_predicts_throttles_perception_and_reuses_cached_detections(self):
+        det = sol.Detection(2, "object", 1.0, 0.0, 1.0, 0.9, -8.5, -10.0, (0, 0, 3, 3))
         solution = self.make_solution_with_fakes([])
+        solution.perception = self.SequencePerception([[det], []])
+        solution.planner = self.RecordingPlanner()
+
+        solution.predicts({"proprio": self.proprio(), "image": {"frame": 1}}, current_score=0.0)
+        solution.predicts({"proprio": self.proprio(), "image": {"frame": 2}}, current_score=0.0)
+
+        self.assertEqual(solution.perception.update_calls, 1)
+        self.assertEqual(solution.planner.detection_batches, [[det], [det]])
+        self.assertEqual(len(solution.bridge.commands), 2)
+
+    def test_reset_resets_all_components_and_perception_cache(self):
+        det = sol.Detection(3, "object", 1.0, 0.0, 1.0, 0.9, -8.0, -10.0, (0, 0, 3, 3))
+        solution = self.make_solution_with_fakes([])
+        solution._perception_step = 3
+        solution._cached_detections = [det]
+
         solution.reset()
+
         self.assertEqual(solution.bridge.reset_calls, 1)
         self.assertEqual(solution.perception.reset_calls, 1)
         self.assertEqual(solution.planner.phase, "search")
         self.assertEqual(solution.odom.pose, sol.Pose2D(-10.0, -10.0, 0.0))
+        self.assertEqual(solution._perception_step, 0)
+        self.assertEqual(solution._cached_detections, [])
 
 
 if __name__ == "__main__":

@@ -635,25 +635,36 @@ class TaskBRgbdPerception:
 
 
 class AlgSolution:
+    PERCEPTION_INTERVAL = 5
+
     def __init__(self):
         self.bridge = G1VelocityPolicyBridge(policy_path=_POLICY_PATH)
         self.odom = DeadReckoningOdometry(dt=0.02, x0=-10.0, y0=-10.0)
         self.perception = TaskBRgbdPerception()
         self.planner = TaskBPlanner()
         self.interaction = LocalObjectInteraction()
+        self._perception_step = 0
+        self._cached_detections: list[Detection] = []
 
     def reset(self, **kwargs) -> None:
         self.bridge.reset()
         self.odom.reset()
         self.perception.reset()
         self.planner.reset()
+        self._perception_step = 0
+        self._cached_detections = []
 
     def predicts(self, obs: dict, current_score: float):
         proprio = obs["proprio"]
         row = proprio[0] if hasattr(proprio, "shape") and len(proprio.shape) >= 2 else proprio
         pose = self.odom.update(row)
         image_obs = obs.get("image", {})
-        detections = self.perception.update(image_obs, pose)
+        perception_step = getattr(self, "_perception_step", 0)
+        detections = getattr(self, "_cached_detections", [])
+        if perception_step % self.PERCEPTION_INTERVAL == 0:
+            detections = self.perception.update(image_obs, pose)
+            self._cached_detections = detections
+        self._perception_step = perception_step + 1
         plan = self.planner.step(pose, detections, current_score)
         action = self.bridge.act(proprio, plan.command)
         action = self.interaction.apply_arm_override(action, plan.arm_mode)

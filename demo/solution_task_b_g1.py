@@ -635,12 +635,26 @@ class TaskBRgbdPerception:
 
 
 class AlgSolution:
-    """Temporary shell. Later tasks replace this with the full controller."""
+    def __init__(self):
+        self.bridge = G1VelocityPolicyBridge(policy_path=_POLICY_PATH)
+        self.odom = DeadReckoningOdometry(dt=0.02, x0=-10.0, y0=-10.0)
+        self.perception = TaskBRgbdPerception()
+        self.planner = TaskBPlanner()
+        self.interaction = LocalObjectInteraction()
 
     def reset(self, **kwargs) -> None:
-        return None
+        self.bridge.reset()
+        self.odom.reset()
+        self.perception.reset()
+        self.planner.reset()
 
     def predicts(self, obs: dict, current_score: float):
         proprio = obs["proprio"]
-        action_dim = (int(proprio.shape[-1]) - 12) // 3 if hasattr(proprio, "shape") else 33
-        return {"action": [0.0] * action_dim, "giveup": False}
+        row = proprio[0] if hasattr(proprio, "shape") and len(proprio.shape) >= 2 else proprio
+        pose = self.odom.update(row)
+        image_obs = obs.get("image", {})
+        detections = self.perception.update(image_obs, pose)
+        plan = self.planner.step(pose, detections, current_score)
+        action = self.bridge.act(proprio, plan.command)
+        action = self.interaction.apply_arm_override(action, plan.arm_mode)
+        return {"action": action, "giveup": False}

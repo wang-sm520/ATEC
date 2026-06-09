@@ -409,5 +409,61 @@ class TaskBRgbdPerceptionTest(unittest.TestCase):
         self.assertLessEqual(len(detections), 1)
 
 
+@unittest.skipIf(torch is None, "torch is not installed in this Python environment")
+class AlgSolutionGlueTest(unittest.TestCase):
+    class FakeBridge:
+        def __init__(self):
+            self.reset_calls = 0
+            self.commands = []
+
+        def reset(self):
+            self.reset_calls += 1
+
+        def act(self, proprio, command):
+            self.commands.append(tuple(command))
+            return [0.0] * 33
+
+    class FakePerception:
+        def __init__(self, detections):
+            self.detections = detections
+            self.reset_calls = 0
+
+        def reset(self):
+            self.reset_calls += 1
+
+        def update(self, image_obs, pose):
+            return self.detections
+
+    def make_solution_with_fakes(self, detections):
+        instance = sol.AlgSolution.__new__(sol.AlgSolution)
+        instance.bridge = self.FakeBridge()
+        instance.odom = sol.DeadReckoningOdometry()
+        instance.perception = self.FakePerception(detections)
+        instance.planner = sol.TaskBPlanner()
+        instance.interaction = sol.LocalObjectInteraction()
+        return instance
+
+    def proprio(self):
+        row = torch.zeros((1, 12 + 3 * 33), dtype=torch.float32)
+        row[0, 9:12] = torch.tensor([0.0, 0.0, -1.0])
+        return row
+
+    def test_predicts_returns_33_dim_action_and_no_giveup(self):
+        det = sol.Detection(1, "object", 1.0, 0.0, 1.0, 0.9, -9.0, -10.0, (0, 0, 3, 3))
+        solution = self.make_solution_with_fakes([det])
+        out = solution.predicts({"proprio": self.proprio(), "image": {}}, current_score=0.0)
+        self.assertFalse(out["giveup"])
+        self.assertEqual(len(out["action"]), 33)
+        self.assertEqual(len(solution.bridge.commands), 1)
+
+    def test_reset_resets_all_components(self):
+        solution = self.make_solution_with_fakes([])
+        solution.reset()
+        self.assertEqual(solution.bridge.reset_calls, 1)
+        self.assertEqual(solution.perception.reset_calls, 1)
+        self.assertEqual(solution.planner.phase, "search")
+        self.assertEqual(solution.odom.pose, sol.Pose2D(-10.0, -10.0, 0.0))
+
+
 if __name__ == "__main__":
     unittest.main()

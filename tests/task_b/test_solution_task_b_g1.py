@@ -8,6 +8,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - environment-specific
     torch = None
 
+try:
+    import numpy as np
+except ModuleNotFoundError:  # pragma: no cover
+    np = None
+
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
@@ -523,6 +528,35 @@ class AlgSolutionGlueTest(unittest.TestCase):
         self.assertEqual(solution.odom.pose, sol.Pose2D(-10.0, -10.0, 0.0))
         self.assertEqual(solution._perception_step, 0)
         self.assertEqual(solution._cached_detections, [])
+
+
+@unittest.skipIf(np is None, "numpy not installed")
+class OpenWBTSquatBridgeObsTest(unittest.TestCase):
+    class FakeRunner:
+        def __init__(self):
+            self.last_obs = None
+        def run(self, obs, hidden):
+            self.last_obs = obs.copy()
+            return np.zeros((1, 12), dtype=np.float32), hidden
+
+    def make_proprio(self, n_joints=33):
+        row = [0.0] * (12 + 3 * n_joints)
+        row[3:6] = [0.0, 0.0, 0.0]
+        row[9:12] = [0.0, 0.0, -1.0]
+        return [row]
+
+    def test_obs_is_78_dims_and_command_first(self):
+        runner = self.FakeRunner()
+        bridge = sol.OpenWBTSquatBridge(policy_runner=runner)
+        bridge.act(self.make_proprio(), sol.SquatCommand(height=0.5, pitch=0.1))
+        self.assertEqual(runner.last_obs.shape, (1, 78))
+        self.assertAlmostEqual(float(runner.last_obs[0, 0]), 0.5, places=5)
+        self.assertAlmostEqual(float(runner.last_obs[0, 1]), 0.1, places=5)
+
+    def test_act_returns_12_leg_actions(self):
+        bridge = sol.OpenWBTSquatBridge(policy_runner=self.FakeRunner())
+        leg = bridge.act(self.make_proprio(), sol.SquatCommand())
+        self.assertEqual(len(leg), 12)
 
 
 if __name__ == "__main__":

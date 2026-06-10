@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+import numpy as np
+
 try:
     import torch
 except ModuleNotFoundError:  # pragma: no cover - the eval image provides torch.
@@ -414,6 +416,147 @@ class TaskBPlanner:
             vx = min(vx, 0.05)
             vy = _clamp(vy, -0.08, 0.08)
         return vx, vy, wz
+
+
+@dataclass(frozen=True)
+class SquatCommand:
+    height: float = 0.75
+    pitch: float = 0.0
+
+
+class _HeuristicSquatRunner:
+    """ONNX 不可用时的脚本蹲姿兜底，输出 OpenWBT 原始 12 动作约定。"""
+    def run(self, obs, hidden_state):
+        height = float(obs[0, 0]); pitch = float(obs[0, 1])
+        drop = float(np.clip(0.75 - height, 0.0, 0.40))
+        hip = -0.9 * drop - 0.10 * pitch
+        knee = 1.8 * drop
+        ankle = -0.9 * drop
+        leg = np.array([hip, 0.0, 0.0, knee, ankle, 0.0], dtype=np.float32)
+        return np.concatenate([leg, leg]).reshape(1, 12), hidden_state
+
+
+class _OnnxSquatRunner:
+    def __init__(self, policy_path):
+        import onnxruntime as ort
+        self.session = ort.InferenceSession(str(policy_path), providers=["CPUExecutionProvider"])
+    def run(self, obs, hidden_state):
+        if hidden_state is None:
+            hidden_state = np.zeros((1, 1, 256), dtype=np.float32)
+        out = self.session.run(
+            ["action", "output_hidden_states"],
+            {"obs": obs.astype(np.float32), "input_hidden_states": hidden_state.astype(np.float32)},
+        )
+        return np.asarray(out[0], dtype=np.float32), np.asarray(out[1], dtype=np.float32)
+
+
+class OpenWBTSquatBridge:
+    NUM_OBS = 78
+    NUM_DOF_OBS = 29
+    NUM_ACTIONS = 12
+    TASKB_ACTION_SCALE = 0.5
+    OPENWBT_ACTION_SCALE = 0.25
+    ANG_VEL_SCALE = 0.25
+    DOF_VEL_SCALE = 0.05
+    CLIP_OBS = 100.0
+    CLIP_ACTIONS = 100.0
+    ANKLE_SAFETY = 0.7
+    KP_RATIO = (
+        0.50, 0.67, 0.67, 0.75, 2.0 * 0.7, 0.0,
+        0.50, 0.67, 0.67, 0.75, 2.0 * 0.7, 0.0,
+    )
+    OPENWBT_DEFAULT_29 = (
+        -0.1, 0.0, 0.0, 0.3, -0.2, 0.0,
+        -0.1, 0.0, 0.0, 0.3, -0.2, 0.0,
+        0.0, 0.0, 0.0,
+        0.0, 0.3, 0.0, 1.0, 0.0, 0.0, 0.0,
+        0.0, -0.3, 0.0, 1.0, 0.0, 0.0, 0.0,
+    )
+    TASKB_DEFAULT_29 = (
+        -0.2, 0.0, 0.0, 0.42, -0.23, 0.0,
+        -0.2, 0.0, 0.0, 0.42, -0.23, 0.0,
+        0.0, 0.0, 0.0,
+        0.35, 0.18, 0.0, 0.87, 0.0, 0.0, 0.0,
+        0.35, -0.18, 0.0, 0.87, 0.0, 0.0, 0.0,
+    )
+
+    def __init__(self, policy_runner=None, policy_path=None):
+        self.policy_runner = policy_runner if policy_runner is not None else self._make_default_runner(policy_path)
+        self._taskb_default = np.asarray(self.TASKB_DEFAULT_29, dtype=np.float32)
+        self._openwbt_default = np.asarray(self.OPENWBT_DEFAULT_29, dtype=np.float32)
+        self._kp_ratio = np.asarray(self.KP_RATIO, dtype=np.float32)
+        self.reset()
+
+    def reset(self):
+        self.last_action = np.zeros(self.NUM_ACTIONS, dtype=np.float32)
+        self.hidden_state = None
+        self._last_q_abs_legs = self._taskb_default[: self.NUM_ACTIONS].copy()
+
+    def _first_row(self, proprio):
+        if hasattr(proprio, "detach"):
+            proprio = proprio.detach().cpu().numpy()
+        arr = np.asarray(proprio, dtype=np.float32)
+        if arr.ndim == 2:
+            arr = arr[0]
+        return arr
+
+    def build_observation(self, proprio, command):
+        row = self._first_row(proprio)
+        n = int(row.shape[0]); full_dim = (n - 12) // 3
+        if 12 + 3 * full_dim != n or full_dim < self.NUM_DOF_OBS:
+            raise ValueError(f"bad proprio length {n}")
+        cmd = self._command_vec(command)
+        ang_vel = row[3:6] * self.ANG_VEL_SCALE
+        gravity = row[9:12]
+        jp_start = 12; jv_start = jp_start + full_dim
+        jp_rel_29 = row[jp_start:jp_start + self.NUM_DOF_OBS]
+        jv_29 = row[jv_start:jv_start + self.NUM_DOF_OBS] * self.DOF_VEL_SCALE
+        jp_openwbt = jp_rel_29 + self._taskb_default - self._openwbt_default
+        self._last_q_abs_legs = (jp_rel_29[: self.NUM_ACTIONS] + self._taskb_default[: self.NUM_ACTIONS]).copy()
+        obs = np.concatenate([cmd, gravity, ang_vel, jp_openwbt, jv_29, self.last_action], dtype=np.float32)
+        return np.clip(obs, -self.CLIP_OBS, self.CLIP_OBS).reshape(1, -1).astype(np.float32)
+
+    def act(self, proprio, command):
+        obs = self.build_observation(proprio, command)
+        raw, self.hidden_state = self.policy_runner.run(obs, self.hidden_state)
+        raw = np.clip(np.asarray(raw, dtype=np.float32).reshape(-1), -self.CLIP_ACTIONS, self.CLIP_ACTIONS)
+        if raw.shape[0] != self.NUM_ACTIONS:
+            raise ValueError(f"squat runner returned {raw.shape[0]} actions, expected 12")
+        raw[[5, 11]] = 0.0
+        self.last_action = raw.copy()
+        # Task 1: 无补偿（静态偏移）。Task 2 替换为增益补偿。
+        target_q = raw * self.OPENWBT_ACTION_SCALE + self._openwbt_default[: self.NUM_ACTIONS]
+        action = (target_q - self._taskb_default[: self.NUM_ACTIONS]) / self.TASKB_ACTION_SCALE
+        action[[5, 11]] = 0.0
+        return np.clip(action, -self.CLIP_ACTIONS, self.CLIP_ACTIONS).astype(np.float32).tolist()
+
+    @staticmethod
+    def _command_vec(command):
+        if isinstance(command, SquatCommand):
+            values = (command.height, command.pitch)
+        else:
+            values = tuple(float(v) for v in command)
+        if len(values) != 2:
+            raise ValueError("squat command must have 2 values")
+        h = float(np.clip(values[0], 0.35, 0.75))
+        p = float(np.clip(values[1], 0.0, 0.5))
+        return np.asarray([h, p], dtype=np.float32)
+
+    @classmethod
+    def _make_default_runner(cls, policy_path):
+        path = policy_path
+        if path is None:
+            for cand in (os.path.join(_DIR, "squat.onnx"),
+                         os.path.join(_DIR, "..", "OpenWBT", "ckpts", "squat.onnx")):
+                if os.path.exists(cand):
+                    path = cand
+                    break
+        if path is not None and os.path.exists(path):
+            try:
+                return _OnnxSquatRunner(path)
+            except Exception:
+                pass
+        return _HeuristicSquatRunner()
 
 
 class LocalObjectInteraction:

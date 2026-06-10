@@ -460,7 +460,7 @@ class OpenWBTSquatBridge:
     DOF_VEL_SCALE = 0.05
     CLIP_OBS = 100.0
     CLIP_ACTIONS = 100.0
-    ANKLE_SAFETY = 0.7
+    ANKLE_SAFETY = 0.7  # reserved for Task 2 gain compensation
     KP_RATIO = (
         0.50, 0.67, 0.67, 0.75, 2.0 * 0.7, 0.0,
         0.50, 0.67, 0.67, 0.75, 2.0 * 0.7, 0.0,
@@ -484,7 +484,7 @@ class OpenWBTSquatBridge:
         self.policy_runner = policy_runner if policy_runner is not None else self._make_default_runner(policy_path)
         self._taskb_default = np.asarray(self.TASKB_DEFAULT_29, dtype=np.float32)
         self._openwbt_default = np.asarray(self.OPENWBT_DEFAULT_29, dtype=np.float32)
-        self._kp_ratio = np.asarray(self.KP_RATIO, dtype=np.float32)
+        self._kp_ratio = np.asarray(self.KP_RATIO, dtype=np.float32)  # used by Task 2 gain compensation
         self.reset()
 
     def reset(self):
@@ -527,7 +527,7 @@ class OpenWBTSquatBridge:
         # Task 1: 无补偿（静态偏移）。Task 2 替换为增益补偿。
         target_q = raw * self.OPENWBT_ACTION_SCALE + self._openwbt_default[: self.NUM_ACTIONS]
         action = (target_q - self._taskb_default[: self.NUM_ACTIONS]) / self.TASKB_ACTION_SCALE
-        action[[5, 11]] = 0.0
+        action[[5, 11]] = 0.0  # keep ankle_roll at default (matters once Task 2 compensation is active)
         return np.clip(action, -self.CLIP_ACTIONS, self.CLIP_ACTIONS).astype(np.float32).tolist()
 
     @staticmethod

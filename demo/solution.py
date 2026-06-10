@@ -1,245 +1,171 @@
-"""ATEC Task D submission — self-contained single-file solution.
+"""ATEC Task B (G1) submission entry point.
 
-Pushes the box into x in [-1.4, 0.7] (+14) and advances the robot past x=-1.4 (+2),
-for 16 points, reusing the frozen G1 locomotion policy (policy.pt) as a velocity
-tracker. NO atec_rl_lab imports: the eval container only ships this file + policy.pt.
+Whole-body loco-manip controller (mini policy18.onnx) + RGB-D perception + planner:
+  detect garbage -> rotate-scan / approach -> creep in -> squat to 0.3 ->
+  both hands brush the front ground -> stand up -> next object.
 
-Strategy (validated in sim, true score 16):
-  warmup -> approach (get behind the box) -> push (drive +x until the box jams against
-  the platform, ~x=-1.07) -> advance (sidestep to clear flat ground, cross x=-1.4).
-Robot pose is dead-reckoned from the measured base velocity in obs['proprio'];
-the box starts at the deterministic world pose (-3, 1.6).
+Submission files (source upload): this file plus
+  - mini_wbc.py            (whole-body controller adapter)
+  - solution_task_b_g1.py  (perception / odometry / planner / posture guard)
+  - policy18.onnx          (WBC policy weights)
+  - requirements.txt       (adds onnxruntime; torch/numpy are in the base image)
+Do NOT upload run.sh / server.py (the platform injects those).
 """
 
 from __future__ import annotations
 
 import math
-import os
-from typing import Any, Sequence
 
-import torch
-
-_DIR = os.path.dirname(os.path.abspath(__file__))
-# The bridge expects the Task A AMP actor (960-dim term-major history). Locally it
-# lives as policy_a.pt; in the submission container only policy.pt is shipped, so
-# copy policy_a.pt -> policy.pt before building. policy_a.pt is preferred when both
-# exist (demo's stock policy.pt is a DIFFERENT 1040-dim model and will not work).
-_POLICY_PATH = None
-for _name in ("policy_a.pt", "policy.pt"):
-    _p = os.path.join(_DIR, _name)
-    if os.path.exists(_p):
-        _POLICY_PATH = _p
-        break
-
-
-# --------------------------------------------------------------------------- #
-# Small math helpers
-# --------------------------------------------------------------------------- #
-def _wrap_to_pi(angle: float) -> float:
-    wrapped = (angle + math.pi) % (2.0 * math.pi) - math.pi
-    return math.pi if math.isclose(wrapped, -math.pi, abs_tol=1e-12) else wrapped
-
-
-def _clamp(v: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, v))
-
-
-def _as_float(value: Any) -> float:
-    return float(value.item()) if hasattr(value, "item") else float(value)
-
-
-# --------------------------------------------------------------------------- #
-# Dead-reckoning odometry from proprioception
-# --------------------------------------------------------------------------- #
-class _Odometry:
-    def __init__(self, dt: float = 0.02, x0: float = -3.0, y0: float = 0.0):
-        self.dt, self.x0, self.y0 = dt, x0, y0
-        self.reset()
-
-    def reset(self) -> None:
-        self.x, self.y, self.yaw = self.x0, self.y0, 0.0
-        self.vx_b = self.vy_b = 0.0
-
-    def update(self, proprio_row: Sequence[float]) -> tuple[float, float, float]:
-        lin = [_as_float(proprio_row[i]) for i in range(0, 3)]
-        ang = [_as_float(proprio_row[i]) for i in range(3, 6)]
-        grav = [_as_float(proprio_row[i]) for i in range(9, 12)]
-        up = self._normalized([-grav[0], -grav[1], -grav[2]])
-        yaw_rate = sum(a * u for a, u in zip(ang, up))
-        c, s = math.cos(self.yaw), math.sin(self.yaw)
-        self.x += (c * lin[0] - s * lin[1]) * self.dt
-        self.y += (s * lin[0] + c * lin[1]) * self.dt
-        self.yaw = _wrap_to_pi(self.yaw + yaw_rate * self.dt)
-        self.vx_b, self.vy_b = lin[0], lin[1]
-        return self.x, self.y, self.yaw
-
-    @staticmethod
-    def _normalized(v):
-        n = math.sqrt(sum(c * c for c in v))
-        return [0.0, 0.0, 1.0] if n <= 1e-8 else [c / n for c in v]
-
-
-# --------------------------------------------------------------------------- #
-# Velocity-command -> joint action bridge around the frozen G1 locomotion policy
-# --------------------------------------------------------------------------- #
-class _G1VelocityPolicyBridge:
-    ACTION_DIM_BODY = 29
-    HISTORY_LEN = 10
-    DIMS = (3, 3, 3, 29, 29, 29)  # ang_vel, cmd, gravity, jp, jv, last_act
-    TRAINING_ACTION_SCALE_29 = (
-        0.231, 0.231, 0.231, 0.231, 0.213, 0.213,
-        0.231, 0.231, 0.231, 0.231, 0.213, 0.213,
-        0.154, 0.213, 0.213,
-        0.373, 0.373, 0.213, 0.373, 0.23, 0.23, 0.23,
-        0.373, 0.373, 0.213, 0.373, 0.23, 0.23, 0.23,
+# Dual-context import: top-level when the platform imports `solution` from demo/,
+# `demo.` prefixed when imported as `demo.solution` during local development.
+try:
+    from mini_wbc import MiniWBC, DEFAULT_LEFT_HAND, DEFAULT_RIGHT_HAND
+    from solution_task_b_g1 import (
+        DeadReckoningOdometry, Detection, PostureGuard, TaskBPlanner, TaskBRgbdPerception, _clamp,
     )
-    EVAL_ACTION_SCALE = 0.5
+except ImportError:  # pragma: no cover - local dev path
+    from demo.mini_wbc import MiniWBC, DEFAULT_LEFT_HAND, DEFAULT_RIGHT_HAND
+    from demo.solution_task_b_g1 import (
+        DeadReckoningOdometry, Detection, PostureGuard, TaskBPlanner, TaskBRgbdPerception, _clamp,
+    )
 
-    def __init__(self, policy_path: str, device: str = "cuda"):
-        self.policy_path = policy_path
-        self.device = torch.device(device if torch.cuda.is_available() else "cpu")
-        self.policy = None
-        self.action_scale_ratio = torch.tensor(
-            [s / self.EVAL_ACTION_SCALE for s in self.TRAINING_ACTION_SCALE_29],
-            device=self.device, dtype=torch.float32,
-        ).view(1, self.ACTION_DIM_BODY)
-        self.reset()
+# Sequence: detect -> approach -> creep forward a bit -> squat to 0.3 -> both hands flat-sweep.
+# Command ranges are the WBC's valid (trained) ranges from mini/command_gui.py:
+#   base height [0.3, 0.9];  hand x [-0.2, 0.6];  hand z [-0.2, 0.65];
+#   left hand y [-0.1, 0.6];  right hand y [-0.6, 0.1].
+# At base height 0.3, hand z=-0.2 puts the palm at the floor (pelvis ~0.32 -> world ~0.12).
+SQUAT_HEIGHT = 0.30
+HAND_Z = -0.20
+REACH_FWD_MIN, REACH_FWD_MAX = -0.10, 0.58
+LEFT_LAT_MIN, LEFT_LAT_MAX = -0.10, 0.55
+RIGHT_LAT_MIN, RIGHT_LAT_MAX = -0.55, 0.10
+CREEP_VEL = 0.35
+CREEP_STEPS = 22
+HAND_SPREAD = 0.10
+SWEEP_LAT_AMP = 0.14
+SWEEP_FWD_AMP = 0.10
+SWEEP_LAT_PERIOD = 36
+SWEEP_FWD_PERIOD = 25
 
-    def reset(self) -> None:
-        self._buf = [torch.zeros((self.HISTORY_LEN, d), device=self.device, dtype=torch.float32)
-                     for d in self.DIMS]
-
-    @staticmethod
-    def _push(buf: torch.Tensor, row: torch.Tensor) -> None:
-        buf[:-1] = buf[1:].clone()
-        buf[-1] = row.reshape(-1)
-
-    def _load(self):
-        if self.policy is None:
-            self.policy = torch.jit.load(self.policy_path, map_location=self.device).eval()
-        return self.policy
-
-    def act(self, proprio: torch.Tensor, cmd: Sequence[float]) -> list[float]:
-        proprio = proprio.to(device=self.device, dtype=torch.float32)
-        if proprio.ndim == 1:
-            proprio = proprio.unsqueeze(0)
-        full_dim = (int(proprio.shape[-1]) - 12) // 3
-        b = self.ACTION_DIM_BODY
-        ang = proprio[0, 3:6]
-        grav = proprio[0, 9:12]
-        command = torch.tensor(tuple(cmd), device=self.device, dtype=torch.float32)
-        jp = proprio[0, 12:12 + b]
-        jv = proprio[0, 12 + full_dim:12 + full_dim + b]
-        la = proprio[0, 12 + 2 * full_dim:12 + 2 * full_dim + b] / self.action_scale_ratio.reshape(-1)
-        for buf, row in zip(self._buf, (ang, command, grav, jp, jv, la)):
-            self._push(buf, row)
-        policy_input = torch.cat([buf.reshape(-1) for buf in self._buf], dim=-1).unsqueeze(0)
-        with torch.inference_mode():
-            out = self._load()(policy_input)
-        if not isinstance(out, torch.Tensor):
-            out = torch.as_tensor(out, device=self.device, dtype=torch.float32)
-        if out.ndim == 1:
-            out = out.unsqueeze(0)
-        action_body = out.to(device=self.device, dtype=torch.float32)[:, :b] * self.action_scale_ratio
-        action_full = torch.zeros((1, full_dim), device=self.device, dtype=torch.float32)
-        action_full[:, :b] = action_body
-        return action_full[0].detach().cpu().tolist()
+SEARCH_YAW = 1.3
+SEARCH_RELOCATE_FWD = 0.55
+SEARCH_ROTATE_STEPS = 185
+SEARCH_RELOCATE_STEPS = 75
+APPROACH_SPEED_GAIN = 1.9
+APPROACH_VX_MAX, APPROACH_VY_MAX, APPROACH_WZ_MAX = 0.6, 0.4, 1.6
 
 
-# --------------------------------------------------------------------------- #
-# Closed-loop pushing state machine
-# --------------------------------------------------------------------------- #
-class _PushController:
-    BOX_START = (-3.0, 1.6)
-    CONTACT_OFFSET = 0.65
-    BOX_TARGET_X = 0.0
-
-    def __init__(self, warmup_steps: int = 20, dt: float = 0.02):
-        self.warmup_steps = warmup_steps
-        self.odom = _Odometry(dt=dt)
-        self.reset()
-
-    def reset(self) -> None:
-        self.odom.reset()
-        self.phase = "warmup"
-        self.box_x, self.box_y = self.BOX_START
-        self.step = 0
-        self._jam_ref_x = -1e9
-        self._jam_ref_step = 0
-
-    def update(self, proprio_row: Sequence[float]) -> tuple[float, float, float]:
-        rx, ry, ryaw = self.odom.update(proprio_row)
-        if self.phase == "push":
-            pred = rx + self.CONTACT_OFFSET
-            if pred > self.box_x:
-                self.box_x = pred
-        self._update_phase(rx, ry, ryaw)
-        cmd = self._control(rx, ry, ryaw)
-        self.step += 1
-        return cmd
-
-    def _update_phase(self, rx, ry, ryaw):
-        if self.phase == "warmup":
-            if self.step >= self.warmup_steps:
-                self.phase = "approach"
-        elif self.phase == "approach":
-            if (rx < self.box_x - 0.50 and abs(ry - self.box_y) < 0.13
-                    and abs(_wrap_to_pi(ryaw)) < 0.13 and rx > self.box_x - 0.85):
-                self.phase, self._jam_ref_x, self._jam_ref_step = "push", rx, self.step
-        elif self.phase == "push":
-            if self.box_x >= self.BOX_TARGET_X:
-                self.phase = "advance"
-            elif rx - self._jam_ref_x > 0.06:
-                self._jam_ref_x, self._jam_ref_step = rx, self.step
-            elif self.step - self._jam_ref_step > 120:
-                self.phase = "advance"
-        # "advance": once the box is secured, keep walking forward (+x) toward the
-        # finish in a clear lane — never stop (may walk into the pit; acceptable).
-
-    def _control(self, rx, ry, ryaw) -> tuple[float, float, float]:
-        if self.phase == "warmup":
-            return 0.0, 0.0, 0.0
-        if self.phase == "hold":
-            return 0.0, 0.0, _clamp(2.0 * -ryaw, -0.8, 0.8)
-        if self.phase == "approach":
-            tx = self.box_x - (0.90 if rx > self.box_x - 0.55 else 0.70)
-            return self._goto(rx, ry, ryaw, tx, self.box_y, -0.5, 0.9, 0.6)
-        if self.phase == "advance":
-            # First sidestep to the clear lane (y~0) WITHOUT going +x (the box is
-            # ahead), then keep driving +x toward the finish indefinitely.
-            if ry > 0.4:
-                return self._goto(rx, ry, ryaw, rx, 0.0, -0.3, 0.25, 0.6)
-            return self._goto(rx, ry, ryaw, rx + 3.0, 0.0, 0.3, 0.95, 0.4)
-        # push
-        ey = self.box_y - ry
-        return 0.9, _clamp(1.2 * ey, -0.4, 0.4), _clamp(2.0 * -ryaw - 1.0 * ey, -0.8, 0.8)
-
-    @staticmethod
-    def _goto(rx, ry, ryaw, tx, ty, vx_lo, vx_hi, vy_abs):
-        ex, ey = tx - rx, ty - ry
-        c, s = math.cos(ryaw), math.sin(ryaw)
-        return (
-            _clamp(1.4 * (c * ex + s * ey), vx_lo, vx_hi),
-            _clamp(1.4 * (-s * ex + c * ey), -vy_abs, vy_abs),
-            _clamp(2.0 * _wrap_to_pi(-ryaw), -1.0, 1.0),
-        )
-
-
-# --------------------------------------------------------------------------- #
-# ATEC entry point
-# --------------------------------------------------------------------------- #
 class AlgSolution:
+    PERCEPTION_INTERVAL = 5
+
     def __init__(self):
-        self.bridge = _G1VelocityPolicyBridge(policy_path=_POLICY_PATH)
-        self.controller = _PushController()
+        self.wbc = MiniWBC()
+        self.odom = DeadReckoningOdometry(dt=0.02, x0=-10.0, y0=-10.0)
+        self.perception = TaskBRgbdPerception()
+        self.planner = TaskBPlanner()
+        self.guard = PostureGuard()
+        self._perception_step = 0
+        self._cached_detections: list[Detection] = []
+        self._reach_step = 0
+        self._search_step = 0
 
     def reset(self, **kwargs) -> None:
-        self.bridge.reset()
-        self.controller.reset()
+        self.wbc.reset()
+        self.odom.reset()
+        self.perception.reset()
+        self.planner.reset()
+        self.guard.reset()
+        self._perception_step = 0
+        self._cached_detections = []
+        self._reach_step = 0
+        self._search_step = 0
+
+    def _search_velocity(self):
+        """Rotate in place to scan; periodically relocate to fresh ground so the robot
+        does not spin forever in one spot (head camera only sees ~0.7-2.5m)."""
+        self._search_step += 1
+        cycle = self._search_step % (SEARCH_ROTATE_STEPS + SEARCH_RELOCATE_STEPS)
+        if cycle < SEARCH_ROTATE_STEPS:
+            return [0.0, 0.0, SEARCH_YAW]
+        return [SEARCH_RELOCATE_FWD, 0.0, 0.0]
+
+    @staticmethod
+    def _scaled_approach_velocity(command):
+        vx, vy, wz = command
+        return [
+            _clamp(vx * APPROACH_SPEED_GAIN, -APPROACH_VX_MAX, APPROACH_VX_MAX),
+            _clamp(vy * APPROACH_SPEED_GAIN, -APPROACH_VY_MAX, APPROACH_VY_MAX),
+            _clamp(wz * 1.3, -APPROACH_WZ_MAX, APPROACH_WZ_MAX),
+        ]
+
+    def _object_base_frame(self, pose, target_world):
+        wx, wy = target_world
+        dx, dy = wx - pose.x, wy - pose.y
+        c, s = math.cos(pose.yaw), math.sin(pose.yaw)
+        return c * dx + s * dy, -s * dx + c * dy  # forward, left
+
+    def _both_hands_sweep(self, pose, target_world, sweep_t):
+        """Both hands brush the front ground horizontally, straddling the object's
+        lateral position, with a slow forward dither. Hands stay at floor level."""
+        fwd0, lat0 = self._object_base_frame(pose, target_world)
+        fwd = _clamp(fwd0 + SWEEP_FWD_AMP * math.sin(2.0 * math.pi * sweep_t / SWEEP_FWD_PERIOD),
+                     REACH_FWD_MIN, REACH_FWD_MAX)
+        lat_sweep = SWEEP_LAT_AMP * math.sin(2.0 * math.pi * sweep_t / SWEEP_LAT_PERIOD)
+        left_center = _clamp(lat0 + HAND_SPREAD, LEFT_LAT_MIN, LEFT_LAT_MAX)
+        right_center = _clamp(lat0 - HAND_SPREAD, RIGHT_LAT_MIN, RIGHT_LAT_MAX)
+        left_lat = _clamp(left_center + lat_sweep, LEFT_LAT_MIN, LEFT_LAT_MAX)
+        right_lat = _clamp(right_center + lat_sweep, RIGHT_LAT_MIN, RIGHT_LAT_MAX)
+        left = [fwd, left_lat, HAND_Z, 1.0, 0.0, 0.0, 0.0]
+        right = [fwd, right_lat, HAND_Z, 1.0, 0.0, 0.0, 0.0]
+        return left, right
+
+    def _creep_velocity(self, pose, target_world):
+        """Forward velocity that keeps the robot aimed at the object while creeping in."""
+        wx, wy = target_world
+        bearing = math.atan2(wy - pose.y, wx - pose.x)
+        yaw_err = (bearing - pose.yaw + math.pi) % (2.0 * math.pi) - math.pi
+        return [CREEP_VEL, 0.0, _clamp(1.5 * yaw_err, -0.5, 0.5)]
 
     def predicts(self, obs: dict, current_score: float):
         proprio = obs["proprio"]
         row = proprio[0] if hasattr(proprio, "shape") and len(proprio.shape) >= 2 else proprio
-        cmd = self.controller.update(row)
-        action = self.bridge.act(proprio, cmd)
+        pose = self.odom.update(row)
+        posture = self.guard.check(row)
+        image_obs = obs.get("image", {})
+        perception_step = getattr(self, "_perception_step", 0)
+        detections = getattr(self, "_cached_detections", [])
+        if perception_step % self.PERCEPTION_INTERVAL == 0:
+            detections = self.perception.update(image_obs, pose)
+            self._cached_detections = detections
+        self._perception_step = perception_step + 1
+        plan = self.planner.step(pose, detections, current_score, posture=posture)
+
+        if plan.phase == "squat_sweep" and plan.target_world is not None:
+            self._reach_step += 1
+            if self._reach_step <= CREEP_STEPS:
+                vel = self._creep_velocity(pose, plan.target_world)
+                action = self.wbc.act(proprio, vel, 0.75, [0.0, 0.0, 0.0],
+                                      list(DEFAULT_LEFT_HAND), list(DEFAULT_RIGHT_HAND))
+            else:
+                left_hand, right_hand = self._both_hands_sweep(pose, plan.target_world,
+                                                               self._reach_step - CREEP_STEPS)
+                action = self.wbc.act(proprio, [0.0, 0.0, 0.0], SQUAT_HEIGHT, [0.0, 0.0, 0.0],
+                                      left_hand, right_hand)
+            return {"action": action, "giveup": False}
+
+        self._reach_step = 0
+        if plan.phase == "stand_up":
+            self._search_step = 0
+            height = plan.squat_command.height if plan.squat_command is not None else 0.75
+            action = self.wbc.act(proprio, [0.0, 0.0, 0.0], height, [0.0, 0.0, 0.0],
+                                  list(DEFAULT_LEFT_HAND), list(DEFAULT_RIGHT_HAND))
+            return {"action": action, "giveup": False}
+
+        if plan.phase == "search":
+            vel = self._search_velocity()
+        else:  # approach_object -> drive toward the object, faster
+            self._search_step = 0
+            vel = self._scaled_approach_velocity(plan.command)
+        action = self.wbc.act(proprio, vel, 0.75, [0.0, 0.0, 0.0],
+                              list(DEFAULT_LEFT_HAND), list(DEFAULT_RIGHT_HAND))
         return {"action": action, "giveup": False}

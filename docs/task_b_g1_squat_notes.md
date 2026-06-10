@@ -177,3 +177,24 @@ Jacobian（每单位 action）：
 - 手眼伺服可作为身体停准后的"最后几 cm 微调",但不能当主力(它改不了深度)。
 
 建议下一步:**回到"准确定位 + 里程计盲走精确停位 + 调好的开环蹲扫"**,而不是继续投入手眼伺服。
+
+## Task 9 Run 11（适配 mini 全身控制器 policy18.onnx）✅✅ 重大进展
+
+`mini/` 是一个全身 loco-manip ONNX 控制器,接口比 OpenWBT 好太多:
+- **num_actions=29(全身:腿+腰+臂)**,命令含:base 速度(3)、**base 高度(蹲)**、腰 rpy(3)、**左右手位姿(各7:xyz+四元数,base 系)**、waist_weight。
+- **kp/kd 几乎与 ATEC 一致**(腿/腰完全相同;臂 40 vs ATEC 100/50/40,小差),**默认角与 ATEC 一致**。obs=115、his_len=5、action_scale=0.25、50Hz。
+- ONNX: obs(115)+obs_history(5×115)+ik_input(15) → actions(29)+ik_output(17,上身IK)。
+- 关节序:policy 用 isaaclab 交错序;mini 的 "mujoco" 序==ATEC dex1 前29序 → 用置换桥接。
+
+适配实现:`scripts/mini_wbc_lib.py`(`MiniWBC`,纯 numpy+onnx)。从 ATEC proprio 建 obs/history/ik_input,action(29 policy序)→ 复刻 apply_action(含 ik_output 替换上身默认+0.4缩放)→ ATEC 33 动作。
+
+**冒烟测试(`scripts/eval_miniwbc.py`,ATEC-TaskB-G1,30s,全程不摔 fell=False):**
+- 站立 0-3s:base_z~0.80,tilt~0.07 稳。
+- 行走 3-8s:前进 +1.67m(~0.33m/s),稳。
+- 蹲+伸右手 12-30s:base_z 降到 **~0.48**,前倾 tilt~0.25,**不摔**。
+
+视频:`logs/videos/miniwbc/run.mp4`(30s,跟随第三人称+头相机+右手相机)。机器人清晰可见,站→走→蹲+右臂下伸。
+
+### 意义 & 下一步
+这一个控制器就**替代了 走路+蹲下+扫地+手眼伺服 四件事**,且 kp/kd/默认角对齐 ATEC、能用手位姿命令做全身 IK 触达。
+→ 下一步:把 MiniWBC 接进 AlgSolution。用已修准的感知(0.04m)拿到物体在 base 系坐标 → 命令 `right_hand_pose` 到物体处 + 降 base 高度 → WBC 全身触达 → hand_base_link 进 0.20m 得分。这才是真正能拿分的路径。

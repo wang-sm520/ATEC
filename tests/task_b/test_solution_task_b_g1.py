@@ -39,6 +39,28 @@ class GeometryHelperTest(unittest.TestCase):
         self.assertAlmostEqual(pose.bearing_to((-10.0, -9.0)), math.pi / 2.0)
 
 
+class HeadCameraGroundProjectionTest(unittest.TestCase):
+    """Pure pinhole + camera-pitch back-projection (no torch needed)."""
+
+    def test_center_pixel_forward_uses_pitch(self):
+        # center pixel, slant depth 2.0 -> forward = offset + depth*cos(pitch)
+        fwd, left = sol.TaskBRgbdPerception._project_pixel_to_base(320, 240, 640, 480, 2.0)
+        self.assertAlmostEqual(fwd, 0.03 + 2.0 * math.cos(math.radians(47.6)), delta=0.01)
+        self.assertAlmostEqual(left, 0.0, delta=1e-6)
+
+    def test_lower_pixel_is_closer_forward(self):
+        # a pixel lower in the image (larger cy) maps to a closer ground point
+        fwd_center, _ = sol.TaskBRgbdPerception._project_pixel_to_base(320, 240, 640, 480, 1.5)
+        fwd_low, _ = sol.TaskBRgbdPerception._project_pixel_to_base(320, 480, 640, 480, 1.5)
+        self.assertLess(fwd_low, fwd_center)
+        self.assertAlmostEqual(fwd_low, 0.679, delta=0.02)
+
+    def test_right_pixel_gives_negative_left(self):
+        fwd, left = sol.TaskBRgbdPerception._project_pixel_to_base(420, 240, 640, 480, 2.0)
+        self.assertLess(left, 0.0)
+        self.assertAlmostEqual(left, -(100.0 / (24.0 / 20.955 * 640.0)) * 2.0, delta=1e-4)
+
+
 @unittest.skipIf(torch is None, "torch is not installed in this Python environment")
 class G1VelocityPolicyBridgeTest(unittest.TestCase):
     class FakePolicy:
@@ -185,22 +207,12 @@ class LocalObjectInteractionTest(unittest.TestCase):
 
 
 class TaskBRgbdPerceptionHelperTest(unittest.TestCase):
-    def test_default_hfov_matches_head_camera_config_lateral_scale(self):
-        perception = sol.TaskBRgbdPerception()
-        expected_hfov = 2.0 * math.atan(20.955 / (2.0 * 24.0))
-        self.assertAlmostEqual(perception.hfov, expected_hfov, places=6)
-
-        right_rel_x, right_rel_y = perception._pixel_to_robot_xy(cx=95, width=96, depth=1.0)
-        right_edge_x_norm = (95.5 / 96.0) - 0.5
-        self.assertAlmostEqual(right_rel_x, 1.0)
-        self.assertAlmostEqual(right_rel_y, -math.tan(right_edge_x_norm * expected_hfov), places=6)
-
-        left_rel_x, left_rel_y = perception._pixel_to_robot_xy(cx=0, width=96, depth=1.0)
-        left_edge_x_norm = (0.5 / 96.0) - 0.5
-        self.assertAlmostEqual(left_rel_x, 1.0)
-        self.assertAlmostEqual(left_rel_y, -math.tan(left_edge_x_norm * expected_hfov), places=6)
-        self.assertGreater(left_rel_y, 0.0)
-        self.assertLess(right_rel_y, 0.0)
+    def test_projection_lateral_sign_matches_image_side(self):
+        # right-of-center pixel -> object to the robot's right -> negative "left"
+        _, right_left = sol.TaskBRgbdPerception._project_pixel_to_base(95, 32, 96, 64, 1.0)
+        _, left_left = sol.TaskBRgbdPerception._project_pixel_to_base(0, 32, 96, 64, 1.0)
+        self.assertLess(right_left, 0.0)
+        self.assertGreater(left_left, 0.0)
 
     def test_assign_track_reserves_used_ids_within_frame(self):
         perception = sol.TaskBRgbdPerception(track_match_dist=1.0)
@@ -234,7 +246,9 @@ class TaskBRgbdPerceptionTest(unittest.TestCase):
         det = detections[0]
         self.assertEqual(det.label, "colored_object")
         self.assertGreater(det.confidence, 0.2)
-        self.assertAlmostEqual(det.distance, 2.0, delta=0.1)
+        # distance is now ground distance (projected), strictly less than the 2.0 slant depth
+        self.assertGreater(det.distance, 0.5)
+        self.assertLess(det.distance, 2.0)
         self.assertGreater(det.world_x, -10.0)
 
     def test_suppresses_large_target_colored_blob_but_keeps_small_blob(self):
@@ -303,7 +317,9 @@ class TaskBRgbdPerceptionTest(unittest.TestCase):
         detections = perception.update({"head_rgb": rgb, "head_depth": depth}, sol.Pose2D(-10.0, -10.0, 0.0))
 
         self.assertEqual(len(detections), 1)
-        self.assertAlmostEqual(detections[0].distance, 2.0, delta=0.1)
+        # ground-projected distance reflects the colored border depth (2.0), not the
+        # interior depth (0.4): depth-2.0 projects to ~1.4m ground, depth-0.4 to ~0.3m.
+        self.assertGreater(detections[0].distance, 1.0)
 
     def test_two_same_frame_components_get_distinct_track_ids(self):
         rgb = torch.zeros((1, 16, 16, 3), dtype=torch.uint8)

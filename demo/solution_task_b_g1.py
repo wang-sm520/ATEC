@@ -694,6 +694,15 @@ class LocalObjectInteraction:
 
 _HEAD_CAMERA_HFOV_DEG = math.degrees(2.0 * math.atan(20.955 / (2.0 * 24.0)))
 
+# Head-camera intrinsics/extrinsics, measured by scripts/probe_task_b_g1_camcalib.py
+# (G1 d435 head camera, ATEC-TaskB-G1). The camera is pitched steeply DOWN, so a
+# floor object's slant depth is much larger than its ground distance — projecting
+# the depth pixel through these is required to place objects accurately.
+_HEAD_CAM_FOCAL_OVER_APERTURE = 24.0 / 20.955   # fx = fy = this * image_width (square pixels)
+_HEAD_CAM_PITCH_RAD = math.radians(47.6)        # downward tilt from horizontal
+_HEAD_CAM_HEIGHT_ABOVE_BASE = 0.56              # camera height above robot base (m)
+_HEAD_CAM_FORWARD_OFFSET = 0.03                 # camera forward offset from base (m)
+
 
 class TaskBRgbdPerception:
     def __init__(
@@ -753,7 +762,8 @@ class TaskBRgbdPerception:
             if not bool(finite.any()):
                 continue
             dist = float(pixel_depth[finite].median().item())
-            rel_x, rel_y = self._pixel_to_robot_xy(cx, rgb.shape[1], dist)
+            rel_x, rel_y = self._project_pixel_to_base(cx, cy, rgb.shape[1], rgb.shape[0], dist)
+            ground_dist = math.hypot(rel_x, rel_y)
             world_x = pose.x + math.cos(pose.yaw) * rel_x - math.sin(pose.yaw) * rel_y
             world_y = pose.y + math.sin(pose.yaw) * rel_x + math.cos(pose.yaw) * rel_y
             if self._is_large_target_background(rgb[..., :3], y_idx, x_idx, x0, y0, x1, y1, world_x, world_y):
@@ -766,7 +776,7 @@ class TaskBRgbdPerception:
                     label="colored_object",
                     rel_x=rel_x,
                     rel_y=rel_y,
-                    distance=dist,
+                    distance=ground_dist,
                     confidence=confidence,
                     world_x=world_x,
                     world_y=world_y,
@@ -834,12 +844,28 @@ class TaskBRgbdPerception:
             components.append(pixels)
         return components
 
-    def _pixel_to_robot_xy(self, cx: int, width: int, depth: float) -> tuple[float, float]:
-        x_norm = (float(cx) + 0.5) / max(float(width), 1.0) - 0.5
-        lateral_angle = x_norm * self.hfov
-        rel_x = float(depth)
-        rel_y = -math.tan(lateral_angle) * float(depth)
-        return rel_x, rel_y
+    @staticmethod
+    def _project_pixel_to_base(cx: float, cy: float, width: int, height: int, depth: float) -> tuple[float, float]:
+        """Back-project a depth pixel to robot-base ground coords (forward, left) in metres.
+
+        Pinhole back-projection (fx=fy=focal/aperture*width, principal point at image
+        centre) into the camera optical frame, then rotate by the measured head-camera
+        downward pitch to recover the horizontal forward distance and lateral offset.
+        ``depth`` is the camera "depth" channel (distance to image plane along the optical
+        axis). Using only the forward component (old behaviour) badly over-estimated the
+        ground distance for the steeply down-pitched head camera.
+        """
+        f = _HEAD_CAM_FOCAL_OVER_APERTURE * float(width)
+        if f <= 0.0:
+            return float(depth), 0.0
+        xc = (float(cx) - float(width) / 2.0) / f * float(depth)    # camera-right
+        yc = (float(cy) - float(height) / 2.0) / f * float(depth)   # camera-down
+        zc = float(depth)                                           # camera-forward (image plane)
+        cth = math.cos(_HEAD_CAM_PITCH_RAD)
+        sth = math.sin(_HEAD_CAM_PITCH_RAD)
+        forward = _HEAD_CAM_FORWARD_OFFSET + zc * cth - yc * sth
+        left = -xc
+        return forward, left
 
     def _assign_track(self, world_x: float, world_y: float, used_track_ids: set[int] | None = None) -> int:
         if used_track_ids is None:

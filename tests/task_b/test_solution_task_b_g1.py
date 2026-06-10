@@ -664,6 +664,21 @@ class PostureGuardTest(unittest.TestCase):
         guard.reset()
         self.assertEqual(guard.state, "ok")
 
+    def test_accepts_2d_batch_list(self):
+        guard = sol.PostureGuard()
+        batch = [[0.0] * 9 + [0.5, 0.0, -0.86] + [0.0] * (3 * 33)]
+        self.assertEqual(guard.check(batch), "recover")
+
+    @unittest.skipIf(np is None, "numpy not installed")
+    def test_accepts_2d_numpy(self):
+        guard = sol.PostureGuard()
+        arr = np.zeros((1, 12 + 3 * 33), dtype=np.float32)
+        arr[0, 9] = 0.5
+        self.assertEqual(guard.check(arr), "recover")
+        upright = np.zeros((1, 12 + 3 * 33), dtype=np.float32)
+        upright[0, 11] = -1.0
+        self.assertEqual(guard.check(upright), "ok")
+
 
 if __name__ == "__main__":
     unittest.main()

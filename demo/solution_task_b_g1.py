@@ -603,7 +603,15 @@ class GroundSweepArmController:
 
 
 class PostureGuard:
-    """监测 projected_gravity 水平分量，判断是否快栽倒。"""
+    """监测 projected_gravity 水平分量，判断是否快栽倒。
+
+    Input: either a 1-D proprio row (list/array of length 12+3*N) OR a 2-D
+    batch (list-of-rows / 2-D array), in which case row[0] is used.
+    Reads ``row[9:12] == projected_gravity`` (gx, gy, gz); upright ≈ (0,0,-1).
+    Return contract: ``"ok"`` | ``"recover"``. As a side effect ``check()``
+    also stores the result on ``self.state``.
+    """
+    # ~20° tilt of the upright axis (asin(0.35) ≈ 20.5°); tune during squat debugging.
     TILT_THRESH = 0.35
 
     def __init__(self, tilt_thresh=None):
@@ -614,7 +622,10 @@ class PostureGuard:
         self.state = "ok"
 
     def check(self, proprio_row):
-        row = proprio_row[0] if hasattr(proprio_row, "__len__") and len(proprio_row) and hasattr(proprio_row[0], "__len__") else proprio_row
+        if hasattr(proprio_row, "__len__") and len(proprio_row) and hasattr(proprio_row[0], "__len__"):
+            row = proprio_row[0]
+        else:
+            row = proprio_row
         gx = _as_float(row[9]); gy = _as_float(row[10])
         tilt = math.hypot(gx, gy)
         self.state = "recover" if tilt > self.tilt_thresh else "ok"

@@ -268,13 +268,10 @@ class TaskBPlanner:
         (-6.0, -6.0, 0.0),
     )
 
-    SETTLE_STEPS = 15
     SQUAT_RAMP_STEPS = 60
     SQUAT_SWEEP_MAX_STEPS = 220
     STAND_RAMP_STEPS = 50
     ARRIVE_DIST = 0.55
-    STILL_LIN = 0.06
-    STILL_ANG = 0.15
     SQUAT_TARGET_HEIGHT = 0.40
     SQUAT_TARGET_PITCH = 0.25
     STAND_HEIGHT = 0.75
@@ -290,7 +287,6 @@ class TaskBPlanner:
         self.placed_track_ids: set[int] = set()
         self.prev_score = 0.0
         self.phase_steps = 0
-        self.settle_steps = 0
         self.squat_step = 0
         self.stand_step = 0
         self.last_squat_height = self.STAND_HEIGHT
@@ -320,7 +316,6 @@ class TaskBPlanner:
             if det.distance <= self.ARRIVE_DIST:
                 self.phase = "squat_sweep"
                 self.squat_step = 0
-                self.settle_steps = 0
                 return self._squat_output(0.0)
             return self._approach_output(pose, det)
 

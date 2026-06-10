@@ -613,7 +613,7 @@ class TaskBPlannerSquatTest(unittest.TestCase):
     def arrive_and_settle(self, planner):
         planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.det(distance=1.0)], 0.0)
         out = None
-        for _ in range(planner.SETTLE_STEPS + 2):
+        for _ in range(17):
             out = planner.step(sol.Pose2D(-9.4, -10.0, 0.0), [self.det(distance=0.35)], 0.0)
         return out
 

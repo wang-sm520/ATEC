@@ -496,6 +496,13 @@ class OpenWBTSquatBridgeObsTest(unittest.TestCase):
         leg = bridge.act(self.make_proprio(), sol.SquatCommand())
         self.assertEqual(len(leg), 12)
 
+    def test_reset_restores_primary_runner(self):
+        primary = self.FakeRunner()
+        bridge = sol.OpenWBTSquatBridge(policy_runner=primary)
+        bridge.policy_runner = sol._HeuristicSquatRunner()  # simulate recover swap
+        bridge.reset()
+        self.assertIs(bridge.policy_runner, primary)
+
 
 @unittest.skipIf(np is None, "numpy not installed")
 class OpenWBTSquatGainCompTest(unittest.TestCase):

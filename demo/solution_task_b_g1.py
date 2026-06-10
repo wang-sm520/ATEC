@@ -484,12 +484,16 @@ class OpenWBTSquatBridge:
 
     def __init__(self, policy_runner=None, policy_path=None):
         self.policy_runner = policy_runner if policy_runner is not None else self._make_default_runner(policy_path)
+        # Remember the primary (ONNX) runner so reset() can restore it after a
+        # within-episode recover fallback swapped in the heuristic runner.
+        self._primary_runner = self.policy_runner
         self._taskb_default = np.asarray(self.TASKB_DEFAULT_29, dtype=np.float32)
         self._openwbt_default = np.asarray(self.OPENWBT_DEFAULT_29, dtype=np.float32)
         self._kp_ratio = np.asarray(self.KP_RATIO, dtype=np.float32)  # online P-term gain compensation
         self.reset()
 
     def reset(self):
+        self.policy_runner = self._primary_runner  # undo any recover-fallback runner swap
         self.last_action = np.zeros(self.NUM_ACTIONS, dtype=np.float32)
         self.hidden_state = None
         self._last_q_abs_legs = self._taskb_default[: self.NUM_ACTIONS].copy()
@@ -897,6 +901,8 @@ class AlgSolution:
         if plan.phase in ("squat_sweep", "stand_up"):
             cmd = plan.squat_command if plan.squat_command is not None else SquatCommand()
             if posture == "recover":
+                # Within-episode fail-safe: degrade to the heuristic squat runner
+                # after a fall. squat_bridge.reset() restores the primary runner.
                 self.squat_bridge.policy_runner = _HeuristicSquatRunner()
             leg = self.squat_bridge.act(proprio, cmd)
             action = [0.0] * (len(leg) + 21)  # 12 legs + 3 waist + 14 arm + 4 hand = 33

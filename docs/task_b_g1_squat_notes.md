@@ -205,3 +205,18 @@ Jacobian（每单位 action）：
 - 手 z 压到物体高度略下 `z = OBJECT_Z - 0.38 - 0.03 = -0.29`(world≈0.11);
 - **近侧手在物体估计点周围做 Lissajous 小扫**(±0.13m,周期 50/33 步)覆盖一片 ~0.25m 区域,4.4s 窗口内反复扫过物体邻域;
 - PostureGuard(tilt>0.35→recover)+ planner stand_up 作深蹲失稳的安全网。
+
+## 感知确认 + 触碰逻辑 v3（按用户指定：识别→接近→蹭一步→蹲0.3→双手平扫）
+
+### 感知确认（scripts/confirm_detection.py，原地转扫 500 步）
+- ✅ **能识别垃圾**：标注图 `outputs/confirm_detection/detect_*.png` 显示绿框准确框住彩色垃圾。
+- 局限:
+  - **视距受限**:头相机俯视带只覆盖前方 ~0.7–2.5m,一次只看到附近几个;转一圈只检出 **3/18 distinct**(远处 >2.5m 看不到,需导航靠近)。
+  - **定位误差(用里程计):median 0.24m / mean 0.54m / p90 1.27m**。感知本身准(真值位姿下 ~0.04m),误差主要来自 dead-reckoning **里程计漂移**(快速转向时最差)。双手平扫(~0.4m 覆盖)用来吸收这个误差。
+
+### WBC 命令有效范围(来自 mini/command_gui.py,关键!)
+base height **[0.3,0.9]**;hand x[-0.2,0.6];hand z **[-0.2,0.65]**;left y[-0.1,0.6];right y[-0.6,0.1]。
+→ **base 0.3 + hand z -0.2 = 手到地面(world~0.12)**。base 0.38 时 hand z 需 -0.26(超范围)够不到地面——所以必须蹲到 0.3。之前 v2 的 z=-0.29 越界了。
+
+### 触碰逻辑 v3
+squat_sweep 阶段:先 `CREEP_STEPS=30` 步以 0.22m/s 朝物体蹭近(站立)→ 蹲到 `SQUAT_HEIGHT=0.3` → **双手在物体两侧 floor 高度(z=-0.2)做横向平扫**(各 ±0.14m,周期 40/27,加前向 dither),覆盖物体邻域。命令全部在 WBC 有效范围内。

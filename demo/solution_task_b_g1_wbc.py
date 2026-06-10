@@ -25,19 +25,25 @@ from demo.solution_task_b_g1 import (
     _clamp,
 )
 
-# object resting height (world z), measured ~0.09-0.14m in ATEC-TaskB-G1
-OBJECT_Z_WORLD = 0.12
-REACH_BASE_HEIGHT = 0.38      # squat depth while reaching (lower = hand reaches floor more easily)
-REACH_PRESS_Z = 0.03          # command the hand this far BELOW object z to ensure contact
-REACH_FWD_MIN, REACH_FWD_MAX = 0.12, 0.60
-REACH_LAT_MAX = 0.42
-# Lissajous sweep around the estimated object position to cover localization error.
-# The 0.20m grasp sphere is generous, so brushing a ~2*amp region guarantees passing
-# within range of a near-center object many times during the reach window.
-SWEEP_AMP_FWD = 0.13
-SWEEP_AMP_LAT = 0.13
-SWEEP_PERIOD_FWD = 50         # steps (~1.0s)
-SWEEP_PERIOD_LAT = 33         # steps (coprime-ish -> dense 2D coverage)
+# Sequence: detect -> approach -> creep forward a bit -> squat to 0.3 -> both hands flat-sweep.
+# Command ranges are the WBC's valid (trained) ranges from mini/command_gui.py:
+#   base height [0.3, 0.9];  hand x [-0.2, 0.6];  hand z [-0.2, 0.65];
+#   left hand y [-0.1, 0.6];  right hand y [-0.6, 0.1].
+# At base height 0.3, hand z=-0.2 puts the palm at the floor (pelvis ~0.32 -> world ~0.12).
+SQUAT_HEIGHT = 0.30           # squat base height while sweeping (= controller minimum)
+HAND_Z = -0.20                # hand z rel pelvis (= controller minimum) -> floor at base 0.30
+REACH_FWD_MIN, REACH_FWD_MAX = -0.10, 0.58
+LEFT_LAT_MIN, LEFT_LAT_MAX = -0.10, 0.55
+RIGHT_LAT_MIN, RIGHT_LAT_MAX = -0.55, 0.10
+# creep forward a bit after arriving, before squatting
+CREEP_VEL = 0.22
+CREEP_STEPS = 30
+# both-hands flat (horizontal) sweep across the front ground, straddling the object
+HAND_SPREAD = 0.10            # left/right hand offset to either side of the object
+SWEEP_LAT_AMP = 0.14
+SWEEP_FWD_AMP = 0.10
+SWEEP_LAT_PERIOD = 40         # steps
+SWEEP_FWD_PERIOD = 27         # steps (coprime-ish -> dense coverage)
 
 
 class AlgSolution:
@@ -63,25 +69,33 @@ class AlgSolution:
         self._cached_detections = []
         self._reach_step = 0
 
-    def _hand_command_for_object(self, pose, target_world, reach_t):
-        """Object world xy -> base-frame hand pose for the near-side hand, with a
-        descending Lissajous sweep around the estimate to cover localization error.
-        Returns (left_hand_cmd, right_hand_cmd)."""
+    def _object_base_frame(self, pose, target_world):
         wx, wy = target_world
         dx, dy = wx - pose.x, wy - pose.y
         c, s = math.cos(pose.yaw), math.sin(pose.yaw)
-        fwd0 = c * dx + s * dy
-        lat0 = -s * dx + c * dy
-        sweep_fwd = SWEEP_AMP_FWD * math.sin(2.0 * math.pi * reach_t / SWEEP_PERIOD_FWD)
-        sweep_lat = SWEEP_AMP_LAT * math.sin(2.0 * math.pi * reach_t / SWEEP_PERIOD_LAT)
-        fwd = _clamp(fwd0 + sweep_fwd, REACH_FWD_MIN, REACH_FWD_MAX)
-        # hand z relative to pelvis (~ REACH_BASE_HEIGHT): aim at floor level, pressed slightly down
-        z = OBJECT_Z_WORLD - REACH_BASE_HEIGHT - REACH_PRESS_Z
-        if lat0 >= 0.0:  # object to the robot's left -> use left hand
-            lat = _clamp(lat0 + sweep_lat, -0.05, REACH_LAT_MAX)
-            return [fwd, lat, z, 1.0, 0.0, 0.0, 0.0], list(DEFAULT_RIGHT_HAND)
-        lat = _clamp(lat0 + sweep_lat, -REACH_LAT_MAX, 0.05)  # object to the right -> right hand
-        return list(DEFAULT_LEFT_HAND), [fwd, lat, z, 1.0, 0.0, 0.0, 0.0]
+        return c * dx + s * dy, -s * dx + c * dy  # forward, left
+
+    def _both_hands_sweep(self, pose, target_world, sweep_t):
+        """Both hands brush the front ground horizontally, straddling the object's
+        lateral position, with a slow forward dither. Hands stay at floor level."""
+        fwd0, lat0 = self._object_base_frame(pose, target_world)
+        fwd = _clamp(fwd0 + SWEEP_FWD_AMP * math.sin(2.0 * math.pi * sweep_t / SWEEP_FWD_PERIOD),
+                     REACH_FWD_MIN, REACH_FWD_MAX)
+        lat_sweep = SWEEP_LAT_AMP * math.sin(2.0 * math.pi * sweep_t / SWEEP_LAT_PERIOD)
+        left_center = _clamp(lat0 + HAND_SPREAD, LEFT_LAT_MIN, LEFT_LAT_MAX)
+        right_center = _clamp(lat0 - HAND_SPREAD, RIGHT_LAT_MIN, RIGHT_LAT_MAX)
+        left_lat = _clamp(left_center + lat_sweep, LEFT_LAT_MIN, LEFT_LAT_MAX)
+        right_lat = _clamp(right_center + lat_sweep, RIGHT_LAT_MIN, RIGHT_LAT_MAX)
+        left = [fwd, left_lat, HAND_Z, 1.0, 0.0, 0.0, 0.0]
+        right = [fwd, right_lat, HAND_Z, 1.0, 0.0, 0.0, 0.0]
+        return left, right
+
+    def _creep_velocity(self, pose, target_world):
+        """Forward velocity that keeps the robot aimed at the object while creeping in."""
+        wx, wy = target_world
+        bearing = math.atan2(wy - pose.y, wx - pose.x)
+        yaw_err = (bearing - pose.yaw + math.pi) % (2.0 * math.pi) - math.pi
+        return [CREEP_VEL, 0.0, _clamp(1.5 * yaw_err, -0.5, 0.5)]
 
     def predicts(self, obs: dict, current_score: float):
         proprio = obs["proprio"]
@@ -99,9 +113,17 @@ class AlgSolution:
 
         if plan.phase == "squat_sweep" and plan.target_world is not None:
             self._reach_step += 1
-            left_hand, right_hand = self._hand_command_for_object(pose, plan.target_world, self._reach_step)
-            action = self.wbc.act(proprio, [0.0, 0.0, 0.0], REACH_BASE_HEIGHT, [0.0, 0.0, 0.0],
-                                  left_hand, right_hand)
+            if self._reach_step <= CREEP_STEPS:
+                # walk forward a bit (still standing) to close the last distance
+                vel = self._creep_velocity(pose, plan.target_world)
+                action = self.wbc.act(proprio, vel, 0.75, [0.0, 0.0, 0.0],
+                                      list(DEFAULT_LEFT_HAND), list(DEFAULT_RIGHT_HAND))
+            else:
+                # squat to 0.3 and brush the front ground with both hands
+                left_hand, right_hand = self._both_hands_sweep(pose, plan.target_world,
+                                                               self._reach_step - CREEP_STEPS)
+                action = self.wbc.act(proprio, [0.0, 0.0, 0.0], SQUAT_HEIGHT, [0.0, 0.0, 0.0],
+                                      left_hand, right_hand)
             return {"action": action, "giveup": False}
 
         self._reach_step = 0

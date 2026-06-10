@@ -460,10 +460,10 @@ class OpenWBTSquatBridge:
     DOF_VEL_SCALE = 0.05
     CLIP_OBS = 100.0
     CLIP_ACTIONS = 100.0
-    ANKLE_SAFETY = 0.7  # reserved for Task 2 gain compensation
+    ANKLE_SAFETY = 0.7  # ankle pitch kp-ratio safety factor (kp_WBT/kp_ATEC=2.0, scaled down to avoid overshoot)
     KP_RATIO = (
-        0.50, 0.67, 0.67, 0.75, 2.0 * 0.7, 0.0,
-        0.50, 0.67, 0.67, 0.75, 2.0 * 0.7, 0.0,
+        0.50, 0.67, 0.67, 0.75, 2.0 * ANKLE_SAFETY, 0.0,
+        0.50, 0.67, 0.67, 0.75, 2.0 * ANKLE_SAFETY, 0.0,
     )
     OPENWBT_DEFAULT_29 = (
         -0.1, 0.0, 0.0, 0.3, -0.2, 0.0,
@@ -525,7 +525,7 @@ class OpenWBTSquatBridge:
         raw[[5, 11]] = 0.0
         self.last_action = raw.copy()
         # Task 2: 在线 P 项增益补偿。
-        q_abs = self._last_q_abs_legs
+        q_abs = self._last_q_abs_legs  # updated by build_observation() above
         target_wbt = raw * self.OPENWBT_ACTION_SCALE + self._openwbt_default[: self.NUM_ACTIONS]
         comp_target = q_abs + self._kp_ratio * (target_wbt - q_abs)
         action = (comp_target - self._taskb_default[: self.NUM_ACTIONS]) / self.TASKB_ACTION_SCALE

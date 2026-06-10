@@ -561,6 +561,46 @@ class OpenWBTSquatBridge:
         return _HeuristicSquatRunner()
 
 
+class GroundSweepArmController:
+    """脚本双臂扫地：随 squat_progress 把手放到地面，再左右摆扫。
+
+    输出 {action_index: value}，仅上肢 15..32。0.5-scale 归一化偏移量，初值启发式，
+    由 scripts/probe_task_b_g1_squat.py 标定后调。
+    """
+    L_SH_PITCH, L_SH_ROLL, L_SH_YAW, L_ELBOW = 15, 16, 17, 18
+    R_SH_PITCH, R_SH_ROLL, R_SH_YAW, R_ELBOW = 22, 23, 24, 25
+    L_FINGER = (29, 30)
+    R_FINGER = (31, 32)
+
+    REACH_SH_PITCH = 0.7
+    REACH_ELBOW = 0.6
+    SWEEP_ROLL_AMP = 0.35
+    SWEEP_PERIOD = 40
+    FINGER_OPEN = 0.4
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.phase = 0
+
+    def step(self, squat_progress):
+        p = max(0.0, min(1.0, float(squat_progress)))
+        self.phase += 1
+        swing = self.SWEEP_ROLL_AMP * p * math.sin(2.0 * math.pi * self.phase / self.SWEEP_PERIOD)
+        out = {
+            self.L_SH_PITCH: self.REACH_SH_PITCH * p,
+            self.R_SH_PITCH: self.REACH_SH_PITCH * p,
+            self.L_ELBOW: self.REACH_ELBOW * p,
+            self.R_ELBOW: self.REACH_ELBOW * p,
+            self.L_SH_ROLL: swing,
+            self.R_SH_ROLL: -swing,
+        }
+        for idx in self.L_FINGER + self.R_FINGER:
+            out[idx] = self.FINGER_OPEN * p
+        return out
+
+
 class LocalObjectInteraction:
     """Conservative G1 upper-body action override.
 

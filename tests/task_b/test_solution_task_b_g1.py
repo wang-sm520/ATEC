@@ -593,5 +593,44 @@ class OpenWBTSquatGainCompTest(unittest.TestCase):
         self.assertAlmostEqual(leg[4], 0.364, places=3)
 
 
+class GroundSweepArmControllerTest(unittest.TestCase):
+    LEFT_SH_PITCH = 15
+    LEFT_ELBOW = 18
+    LEFT_SH_ROLL = 16
+    RIGHT_SH_ROLL = 23
+
+    def test_progress_zero_arms_near_stow(self):
+        sweep = sol.GroundSweepArmController()
+        out = sweep.step(squat_progress=0.0)
+        self.assertLess(abs(out.get(self.LEFT_SH_PITCH, 0.0)), 0.1)
+
+    def test_progress_one_reaches_down(self):
+        sweep = sol.GroundSweepArmController()
+        out = sweep.step(squat_progress=1.0)
+        self.assertGreater(out[self.LEFT_SH_PITCH], 0.3)
+        self.assertGreater(out[self.LEFT_ELBOW], 0.3)
+
+    def test_sweep_oscillates_left_right(self):
+        sweep = sol.GroundSweepArmController()
+        sweep.step(squat_progress=1.0)  # phase advances internally
+        a = sweep.step(squat_progress=1.0)[self.LEFT_SH_ROLL]
+        for _ in range(20):
+            b_out = sweep.step(squat_progress=1.0)
+        b = b_out[self.LEFT_SH_ROLL]
+        self.assertNotAlmostEqual(a, b, places=3)
+
+    def test_only_upper_body_indices(self):
+        sweep = sol.GroundSweepArmController()
+        out = sweep.step(squat_progress=1.0)
+        self.assertTrue(all(15 <= i <= 32 for i in out.keys()))
+
+    def test_reset_clears_phase(self):
+        sweep = sol.GroundSweepArmController()
+        for _ in range(5):
+            sweep.step(squat_progress=1.0)
+        sweep.reset()
+        self.assertEqual(sweep.phase, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -624,7 +624,10 @@ class PostureGuard:
         self.state = "ok"
 
     def check(self, proprio_row):
-        if hasattr(proprio_row, "__len__") and len(proprio_row) and hasattr(proprio_row[0], "__len__"):
+        if hasattr(proprio_row, "ndim"):
+            row = proprio_row[0] if proprio_row.ndim == 2 else proprio_row
+        elif (hasattr(proprio_row, "__len__") and len(proprio_row) > 0
+              and hasattr(proprio_row[0], "__len__")):
             row = proprio_row[0]
         else:
             row = proprio_row
@@ -857,18 +860,23 @@ class AlgSolution:
 
     def __init__(self):
         self.bridge = G1VelocityPolicyBridge(policy_path=_POLICY_PATH)
+        self.squat_bridge = OpenWBTSquatBridge()
         self.odom = DeadReckoningOdometry(dt=0.02, x0=-10.0, y0=-10.0)
         self.perception = TaskBRgbdPerception()
         self.planner = TaskBPlanner()
-        self.interaction = LocalObjectInteraction()
+        self.sweep = GroundSweepArmController()
+        self.guard = PostureGuard()
         self._perception_step = 0
         self._cached_detections: list[Detection] = []
 
     def reset(self, **kwargs) -> None:
         self.bridge.reset()
+        self.squat_bridge.reset()
         self.odom.reset()
         self.perception.reset()
         self.planner.reset()
+        self.sweep.reset()
+        self.guard.reset()
         self._perception_step = 0
         self._cached_detections = []
 
@@ -876,6 +884,7 @@ class AlgSolution:
         proprio = obs["proprio"]
         row = proprio[0] if hasattr(proprio, "shape") and len(proprio.shape) >= 2 else proprio
         pose = self.odom.update(row)
+        posture = self.guard.check(row)
         image_obs = obs.get("image", {})
         perception_step = getattr(self, "_perception_step", 0)
         detections = getattr(self, "_cached_detections", [])
@@ -883,7 +892,20 @@ class AlgSolution:
             detections = self.perception.update(image_obs, pose)
             self._cached_detections = detections
         self._perception_step = perception_step + 1
-        plan = self.planner.step(pose, detections, current_score)
+        plan = self.planner.step(pose, detections, current_score, posture=posture)
+
+        if plan.phase in ("squat_sweep", "stand_up"):
+            cmd = plan.squat_command if plan.squat_command is not None else SquatCommand()
+            if posture == "recover":
+                self.squat_bridge.policy_runner = _HeuristicSquatRunner()
+            leg = self.squat_bridge.act(proprio, cmd)
+            action = [0.0] * (len(leg) + 21)  # 12 legs + 3 waist + 14 arm + 4 hand = 33
+            action[:12] = leg
+            if plan.arm_mode == "sweep":
+                for idx, val in self.sweep.step(plan.squat_progress).items():
+                    if idx < len(action):
+                        action[idx] = float(val)
+            return {"action": action, "giveup": False}
+
         action = self.bridge.act(proprio, plan.command)
-        action = self.interaction.apply_arm_override(action, plan.arm_mode)
         return {"action": action, "giveup": False}

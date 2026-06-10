@@ -352,6 +352,16 @@ class AlgSolutionGlueTest(unittest.TestCase):
             self.commands.append(tuple(command))
             return [0.0] * 33
 
+    class FakeSquatBridge:
+        def __init__(self):
+            self.reset_calls = 0
+
+        def reset(self):
+            self.reset_calls += 1
+
+        def act(self, proprio, command):
+            return [0.0] * 12
+
     class FakePerception:
         def __init__(self, detections):
             self.detections = detections
@@ -388,17 +398,21 @@ class AlgSolutionGlueTest(unittest.TestCase):
             self.reset_calls += 1
             self.detection_batches.clear()
 
-        def step(self, pose, detections, current_score):
+        def step(self, pose, detections, current_score, posture="ok"):
             self.detection_batches.append(list(detections))
             return sol.PlannerOutput("record", (0.1, 0.0, 0.0), "stow", None)
 
     def make_solution_with_fakes(self, detections):
         instance = sol.AlgSolution.__new__(sol.AlgSolution)
         instance.bridge = self.FakeBridge()
+        instance.squat_bridge = self.FakeSquatBridge()
         instance.odom = sol.DeadReckoningOdometry()
         instance.perception = self.FakePerception(detections)
         instance.planner = sol.TaskBPlanner()
-        instance.interaction = sol.LocalObjectInteraction()
+        instance.sweep = sol.GroundSweepArmController()
+        instance.guard = sol.PostureGuard()
+        instance._perception_step = 0
+        instance._cached_detections = []
         return instance
 
     def proprio(self):
@@ -603,6 +617,23 @@ class PostureGuardTest(unittest.TestCase):
         upright[0, 11] = -1.0
         self.assertEqual(guard.check(upright), "ok")
 
+    def test_ndim1_tensor_like_not_unwrapped(self):
+        class TensorLike:
+            def __init__(self, data):
+                self._d = list(data); self.ndim = 1
+            def __len__(self):  # mimic torch: method exists even for scalars
+                return len(self._d)
+            def __getitem__(self, i):
+                v = self._d[i]
+                class Scalar:
+                    def __init__(self, x): self._x = x
+                    def __len__(self): raise TypeError("len() of unsized scalar")
+                    def item(self): return self._x
+                return Scalar(v)
+        guard = sol.PostureGuard()
+        row = [0.0]*9 + [0.5, 0.0, -0.86] + [0.0]*(3*33)
+        self.assertEqual(guard.check(TensorLike(row)), "recover")
+
 
 class TaskBPlannerSquatTest(unittest.TestCase):
     def det(self, track_id=1, world=(-9.0, -10.0), distance=0.35):
@@ -652,6 +683,76 @@ class TaskBPlannerSquatTest(unittest.TestCase):
         self.arrive_and_settle(planner)
         out = planner.step(sol.Pose2D(-9.4, -10.0, 0.0), [self.det(distance=0.35)], 0.0, posture="recover")
         self.assertEqual(out.phase, "stand_up")
+
+
+@unittest.skipIf(np is None, "numpy not installed")
+class AlgSolutionSquatGlueTest(unittest.TestCase):
+    class FakeWalk:
+        def __init__(self):
+            self.reset_calls = 0; self.calls = 0
+        def reset(self): self.reset_calls += 1
+        def act(self, proprio, command): self.calls += 1; return [0.0] * 33
+
+    class FakeSquat:
+        def __init__(self):
+            self.reset_calls = 0; self.calls = 0
+        def reset(self): self.reset_calls += 1
+        def act(self, proprio, command):
+            self.calls += 1
+            return [0.7] * 12
+
+    class FakePerception:
+        def __init__(self, dets): self.dets = dets; self.reset_calls = 0
+        def reset(self): self.reset_calls += 1
+        def update(self, image, pose): return self.dets
+
+    def make_sol(self, dets):
+        inst = sol.AlgSolution.__new__(sol.AlgSolution)
+        inst.bridge = self.FakeWalk()
+        inst.squat_bridge = self.FakeSquat()
+        inst.odom = sol.DeadReckoningOdometry()
+        inst.perception = self.FakePerception(dets)
+        inst.planner = sol.TaskBPlanner()
+        inst.sweep = sol.GroundSweepArmController()
+        inst.guard = sol.PostureGuard()
+        inst._perception_step = 0
+        inst._cached_detections = []
+        return inst
+
+    def proprio(self):
+        r = np.zeros((1, 12 + 3 * 33), dtype=np.float32)
+        r[0, 9:12] = np.array([0.0, 0.0, -1.0], dtype=np.float32)
+        return r
+
+    def test_search_uses_walk_bridge(self):
+        s = self.make_sol([])
+        out = s.predicts({"proprio": self.proprio(), "image": {}}, 0.0)
+        self.assertEqual(len(out["action"]), 33)
+        self.assertFalse(out["giveup"])
+        self.assertEqual(s.bridge.calls, 1)
+        self.assertEqual(s.squat_bridge.calls, 0)
+
+    def test_squat_phase_uses_squat_legs_and_sweep_arms(self):
+        det = sol.Detection(1, "o", 0.35, 0.0, 0.35, 0.9, -9.0, -10.0, (0, 0, 3, 3))
+        s = self.make_sol([det])
+        out = None
+        for _ in range(20):
+            out = s.predicts({"proprio": self.proprio(), "image": {}}, 0.0)
+        self.assertEqual(s.planner.phase, "squat_sweep")
+        self.assertGreater(s.squat_bridge.calls, 0)
+        self.assertEqual(len(out["action"]), 33)
+        # legs from squat bridge (0.7), arms overridden by sweep at progress>0
+        self.assertAlmostEqual(out["action"][0], 0.7, places=5)
+        self.assertGreater(out["action"][15], 0.0)  # left shoulder pitch swept down
+
+    def test_reset_resets_all(self):
+        s = self.make_sol([])
+        s.reset()
+        self.assertEqual(s.bridge.reset_calls, 1)
+        self.assertEqual(s.squat_bridge.reset_calls, 1)
+        self.assertEqual(s.perception.reset_calls, 1)
+        self.assertEqual(s.planner.phase, "search")
+        self.assertEqual(s.guard.state, "ok")
 
 
 if __name__ == "__main__":

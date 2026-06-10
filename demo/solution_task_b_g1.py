@@ -602,6 +602,25 @@ class GroundSweepArmController:
         return out
 
 
+class PostureGuard:
+    """监测 projected_gravity 水平分量，判断是否快栽倒。"""
+    TILT_THRESH = 0.35
+
+    def __init__(self, tilt_thresh=None):
+        self.tilt_thresh = float(self.TILT_THRESH if tilt_thresh is None else tilt_thresh)
+        self.reset()
+
+    def reset(self):
+        self.state = "ok"
+
+    def check(self, proprio_row):
+        row = proprio_row[0] if hasattr(proprio_row, "__len__") and len(proprio_row) and hasattr(proprio_row[0], "__len__") else proprio_row
+        gx = _as_float(row[9]); gy = _as_float(row[10])
+        tilt = math.hypot(gx, gy)
+        self.state = "recover" if tilt > self.tilt_thresh else "ok"
+        return self.state
+
+
 class LocalObjectInteraction:
     """Conservative G1 upper-body action override.
 

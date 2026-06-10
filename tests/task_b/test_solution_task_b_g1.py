@@ -644,5 +644,26 @@ class GroundSweepArmControllerTest(unittest.TestCase):
         self.assertEqual(sweep.phase, 0)
 
 
+class PostureGuardTest(unittest.TestCase):
+    def row(self, gx, gy, gz):
+        r = [0.0] * (12 + 3 * 33)
+        r[9:12] = [gx, gy, gz]
+        return r
+
+    def test_upright_is_ok(self):
+        guard = sol.PostureGuard()
+        self.assertEqual(guard.check(self.row(0.0, 0.0, -1.0)), "ok")
+
+    def test_large_tilt_is_recover(self):
+        guard = sol.PostureGuard()
+        self.assertEqual(guard.check(self.row(0.5, 0.0, -0.86)), "recover")
+
+    def test_reset(self):
+        guard = sol.PostureGuard()
+        guard.check(self.row(0.5, 0.0, -0.86))
+        guard.reset()
+        self.assertEqual(guard.state, "ok")
+
+
 if __name__ == "__main__":
     unittest.main()

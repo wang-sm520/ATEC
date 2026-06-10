@@ -73,6 +73,8 @@ class PlannerOutput:
     command: tuple[float, float, float]
     arm_mode: str
     target_world: tuple[float, float] | None = None
+    squat_command: SquatCommand | None = None
+    squat_progress: float = 0.0
 
 
 class G1VelocityPolicyBridge:
@@ -266,6 +268,17 @@ class TaskBPlanner:
         (-6.0, -6.0, 0.0),
     )
 
+    SETTLE_STEPS = 15
+    SQUAT_RAMP_STEPS = 60
+    SQUAT_SWEEP_MAX_STEPS = 220
+    STAND_RAMP_STEPS = 50
+    ARRIVE_DIST = 0.55
+    STILL_LIN = 0.06
+    STILL_ANG = 0.15
+    SQUAT_TARGET_HEIGHT = 0.40
+    SQUAT_TARGET_PITCH = 0.25
+    STAND_HEIGHT = 0.75
+
     def __init__(self):
         self.reset()
 
@@ -277,19 +290,14 @@ class TaskBPlanner:
         self.placed_track_ids: set[int] = set()
         self.prev_score = 0.0
         self.phase_steps = 0
+        self.settle_steps = 0
+        self.squat_step = 0
+        self.stand_step = 0
+        self.last_squat_height = self.STAND_HEIGHT
 
-    def step(self, pose: Pose2D, detections: list[Detection], current_score: float) -> PlannerOutput:
+    def step(self, pose: Pose2D, detections: list[Detection], current_score: float, posture: str = "ok") -> PlannerOutput:
         score_delta = float(current_score) - self.prev_score
         self.prev_score = float(current_score)
-        if score_delta > 0.0 and self.active_detection is not None:
-            if self.phase == "touch_object":
-                self.touched_track_ids.add(self.active_detection.track_id)
-                self.phase = "verify_or_next"
-                self.phase_steps = 0
-            elif self.phase == "push_to_goal":
-                self.placed_track_ids.add(self.active_detection.track_id)
-                self.phase = "verify_or_next"
-                self.phase_steps = 0
 
         if self.phase == "search":
             fresh = self._choose_detection(detections)
@@ -309,43 +317,40 @@ class TaskBPlanner:
                 self.phase_steps = 0
                 return self._search_output(pose)
             self.active_detection = det
-            if det.distance <= 0.55:
-                self.phase = "touch_object"
-                self.phase_steps = 0
-                return PlannerOutput("touch_object", self._face_and_creep(det), "left_touch", (det.world_x, det.world_y))
+            if det.distance <= self.ARRIVE_DIST:
+                self.phase = "squat_sweep"
+                self.squat_step = 0
+                self.settle_steps = 0
+                return self._squat_output(0.0)
             return self._approach_output(pose, det)
 
-        if self.phase == "touch_object":
-            det = self._refresh_active_detection(detections)
-            self.phase_steps += 1
-            if det is None or self.phase_steps > 120:
-                self.phase = "verify_or_next"
-                self.phase_steps = 0
-                return PlannerOutput("verify_or_next", (0.0, 0.0, 0.0), "stow", None)
-            if self._near_target((det.world_x, det.world_y), max_distance=4.0):
-                if self.phase_steps > 40:
-                    self.phase = "push_to_goal"
-                    self.phase_steps = 0
-                    return self._push_output(pose, det)
-            return PlannerOutput("touch_object", self._face_and_creep(det), "left_touch", (det.world_x, det.world_y))
+        if self.phase == "squat_sweep":
+            if posture == "recover":
+                self.phase = "stand_up"
+                self.stand_step = 0
+                return self._stand_output()
+            if score_delta > 0.0 and self.active_detection is not None:
+                self.placed_track_ids.discard(self.active_detection.track_id)
+                self.touched_track_ids.add(self.active_detection.track_id)
+                self.phase = "stand_up"
+                self.stand_step = 0
+                return self._stand_output()
+            self.squat_step += 1
+            if self.squat_step > self.SQUAT_SWEEP_MAX_STEPS:
+                self.phase = "stand_up"
+                self.stand_step = 0
+                return self._stand_output()
+            progress = min(1.0, self.squat_step / self.SQUAT_RAMP_STEPS)
+            return self._squat_output(progress)
 
-        if self.phase == "push_to_goal":
-            det = self._refresh_active_detection(detections)
-            self.phase_steps += 1
-            if det is None or self.phase_steps > 180:
-                self.phase = "verify_or_next"
-                self.phase_steps = 0
-                return PlannerOutput("verify_or_next", (0.0, 0.0, 0.0), "stow", None)
-            return self._push_output(pose, det)
-
-        if self.phase == "verify_or_next":
-            self.phase_steps += 1
-            if self.phase_steps >= 20:
+        if self.phase == "stand_up":
+            self.stand_step += 1
+            if self.stand_step >= self.STAND_RAMP_STEPS:
                 self.active_detection = None
                 self.phase = "search"
                 self.phase_steps = 0
                 return self._search_output(pose)
-            return PlannerOutput("verify_or_next", (0.0, 0.0, 0.0), "stow", None)
+            return self._stand_output()
 
         self.phase = "search"
         self.active_detection = None
@@ -383,22 +388,24 @@ class TaskBPlanner:
         ty = det.world_y - standoff * math.sin(bearing)
         return PlannerOutput("approach_object", self._drive_to(pose, tx, ty, bearing, 0.28), "stow", (det.world_x, det.world_y))
 
-    def _push_output(self, pose: Pose2D, det: Detection) -> PlannerOutput:
-        desired_yaw = math.atan2(self.TARGET_CENTER[1] - det.world_y, self.TARGET_CENTER[0] - det.world_x)
-        yaw_err = _wrap_to_pi(desired_yaw - pose.yaw)
-        vx = 0.18 if abs(yaw_err) < 0.45 else 0.0
-        wz = _clamp(1.8 * yaw_err, -0.7, 0.7)
-        return PlannerOutput("push_to_goal", (vx, 0.0, wz), "left_push", (det.world_x, det.world_y))
+    def _squat_output(self, progress: float) -> PlannerOutput:
+        height = self.STAND_HEIGHT + progress * (self.SQUAT_TARGET_HEIGHT - self.STAND_HEIGHT)
+        pitch = progress * self.SQUAT_TARGET_PITCH
+        self.last_squat_height = height
+        tw = None if self.active_detection is None else (self.active_detection.world_x, self.active_detection.world_y)
+        return PlannerOutput("squat_sweep", (0.0, 0.0, 0.0), "sweep", tw,
+                             squat_command=SquatCommand(height=height, pitch=pitch), squat_progress=progress)
+
+    def _stand_output(self) -> PlannerOutput:
+        progress = min(1.0, self.stand_step / self.STAND_RAMP_STEPS)
+        height = self.SQUAT_TARGET_HEIGHT + progress * (self.STAND_HEIGHT - self.SQUAT_TARGET_HEIGHT)
+        self.last_squat_height = height
+        return PlannerOutput("stand_up", (0.0, 0.0, 0.0), "stow", None,
+                             squat_command=SquatCommand(height=height, pitch=0.0), squat_progress=0.0)
 
     @staticmethod
     def _near_target(xy: tuple[float, float], max_distance: float) -> bool:
         return math.hypot(xy[0] - TaskBPlanner.TARGET_CENTER[0], xy[1] - TaskBPlanner.TARGET_CENTER[1]) <= max_distance
-
-    @staticmethod
-    def _face_and_creep(det: Detection) -> tuple[float, float, float]:
-        yaw_err = math.atan2(det.rel_y, max(det.rel_x, 1e-6))
-        vx = 0.10 if abs(yaw_err) < 0.35 else 0.0
-        return vx, 0.0, _clamp(2.0 * yaw_err, -0.5, 0.5)
 
     @staticmethod
     def _drive_to(pose: Pose2D, tx: float, ty: float, tyaw: float, max_vx: float) -> tuple[float, float, float]:

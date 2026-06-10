@@ -147,89 +147,13 @@ class TaskBPlannerTest(unittest.TestCase):
         self.assertEqual(out.phase, "search")
         self.assertIsNone(planner.active_detection)
 
-    def test_close_detection_enters_touch_phase(self):
-        planner = sol.TaskBPlanner()
-        planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
-        out = planner.step(
-            sol.Pose2D(-9.45, -10.0, 0.0),
-            [self.detection(world=(-9.0, -10.0), rel=(0.45, 0.0), distance=0.45)],
-            current_score=0.0,
-        )
-        self.assertEqual(out.phase, "touch_object")
-        self.assertEqual(out.arm_mode, "left_touch")
-
-    def test_score_delta_marks_contact_and_verifies_next(self):
-        planner = sol.TaskBPlanner()
-        planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
-        planner.step(sol.Pose2D(-9.45, -10.0, 0.0), [self.detection(distance=0.45)], current_score=0.0)
-        out = planner.step(sol.Pose2D(-9.35, -10.0, 0.0), [self.detection(distance=0.35)], current_score=1.0)
-        self.assertEqual(out.phase, "verify_or_next")
-        self.assertIn(1, planner.touched_track_ids)
-
-    def test_touch_expires_stale_detection_after_missing_frames(self):
-        planner = sol.TaskBPlanner()
-        planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.detection()], current_score=0.0)
-        planner.step(sol.Pose2D(-9.45, -10.0, 0.0), [self.detection(distance=0.45)], current_score=0.0)
-
-        out = None
-        for _ in range(31):
-            out = planner.step(sol.Pose2D(-9.45, -10.0, 0.0), [], current_score=0.0)
-
-        self.assertEqual(out.phase, "verify_or_next")
-        self.assertEqual(out.arm_mode, "stow")
-
-    def test_push_expires_stale_detection_after_missing_frames(self):
-        planner = sol.TaskBPlanner()
-        pose = sol.Pose2D(-6.95, -10.0, 0.0)
-        det = self.detection(track_id=7, world=(-6.5, -10.0), rel=(0.45, 0.0), distance=0.45)
-        planner.step(pose, [det], current_score=0.0)
-        planner.step(pose, [det], current_score=0.0)
-        out = None
-        for _ in range(41):
-            out = planner.step(pose, [det], current_score=0.0)
-        self.assertEqual(out.phase, "push_to_goal")
-
-        for _ in range(31):
-            out = planner.step(pose, [], current_score=0.0)
-
-        self.assertEqual(out.phase, "verify_or_next")
-        self.assertEqual(out.arm_mode, "stow")
-
-    def test_push_score_marks_placed_without_new_touch(self):
-        planner = sol.TaskBPlanner()
-        pose = sol.Pose2D(-6.95, -10.0, 0.0)
-        det = self.detection(track_id=7, world=(-6.5, -10.0), rel=(0.45, 0.0), distance=0.45)
-        planner.step(pose, [det], current_score=0.0)
-        planner.step(pose, [det], current_score=0.0)
-        out = None
-        for _ in range(41):
-            out = planner.step(pose, [det], current_score=0.0)
-        self.assertEqual(out.phase, "push_to_goal")
-        self.assertNotIn(7, planner.touched_track_ids)
-
-        out = planner.step(pose, [det], current_score=1.0)
-
-        self.assertEqual(out.phase, "verify_or_next")
-        self.assertIn(7, planner.placed_track_ids)
-        self.assertNotIn(7, planner.touched_track_ids)
-
     def test_search_skips_already_placed_detection(self):
         planner = sol.TaskBPlanner()
+        planner.placed_track_ids.add(7)
         pose = sol.Pose2D(-6.95, -10.0, 0.0)
         det = self.detection(track_id=7, world=(-6.5, -10.0), rel=(0.45, 0.0), distance=0.45)
-        planner.step(pose, [det], current_score=0.0)
-        planner.step(pose, [det], current_score=0.0)
-        for _ in range(41):
-            planner.step(pose, [det], current_score=0.0)
-        planner.step(pose, [det], current_score=1.0)
-        self.assertIn(7, planner.placed_track_ids)
 
-        out = None
-        for _ in range(20):
-            out = planner.step(pose, [], current_score=1.0)
-        self.assertEqual(out.phase, "search")
-
-        out = planner.step(pose, [det], current_score=1.0)
+        out = planner.step(pose, [det], current_score=0.0)
 
         self.assertEqual(out.phase, "search")
         self.assertNotEqual(out.target_world, (det.world_x, det.world_y))
@@ -678,6 +602,56 @@ class PostureGuardTest(unittest.TestCase):
         upright = np.zeros((1, 12 + 3 * 33), dtype=np.float32)
         upright[0, 11] = -1.0
         self.assertEqual(guard.check(upright), "ok")
+
+
+class TaskBPlannerSquatTest(unittest.TestCase):
+    def det(self, track_id=1, world=(-9.0, -10.0), distance=0.35):
+        return sol.Detection(track_id=track_id, label="object", rel_x=distance, rel_y=0.0,
+                             distance=distance, confidence=0.9, world_x=world[0], world_y=world[1],
+                             bbox=(0, 0, 3, 3))
+
+    def arrive_and_settle(self, planner):
+        planner.step(sol.Pose2D(-10.0, -10.0, 0.0), [self.det(distance=1.0)], 0.0)
+        out = None
+        for _ in range(planner.SETTLE_STEPS + 2):
+            out = planner.step(sol.Pose2D(-9.4, -10.0, 0.0), [self.det(distance=0.35)], 0.0)
+        return out
+
+    def test_arrival_enters_squat_sweep(self):
+        planner = sol.TaskBPlanner()
+        out = self.arrive_and_settle(planner)
+        self.assertEqual(out.phase, "squat_sweep")
+        self.assertEqual(out.arm_mode, "sweep")
+        self.assertIsNotNone(out.squat_command)
+
+    def test_squat_height_ramps_down(self):
+        planner = sol.TaskBPlanner()
+        self.arrive_and_settle(planner)
+        h_first = planner.last_squat_height
+        for _ in range(planner.SQUAT_RAMP_STEPS):
+            planner.step(sol.Pose2D(-9.4, -10.0, 0.0), [self.det(distance=0.35)], 0.0)
+        self.assertLess(planner.last_squat_height, h_first)
+
+    def test_score_marks_touch_and_stands_up(self):
+        planner = sol.TaskBPlanner()
+        self.arrive_and_settle(planner)
+        out = planner.step(sol.Pose2D(-9.4, -10.0, 0.0), [self.det(distance=0.35)], current_score=1.0)
+        self.assertIn(1, planner.touched_track_ids)
+        self.assertEqual(out.phase, "stand_up")
+
+    def test_timeout_stands_up(self):
+        planner = sol.TaskBPlanner()
+        self.arrive_and_settle(planner)
+        out = None
+        for _ in range(planner.SQUAT_SWEEP_MAX_STEPS + 1):
+            out = planner.step(sol.Pose2D(-9.4, -10.0, 0.0), [self.det(distance=0.35)], 0.0)
+        self.assertEqual(out.phase, "stand_up")
+
+    def test_recover_request_stands_up(self):
+        planner = sol.TaskBPlanner()
+        self.arrive_and_settle(planner)
+        out = planner.step(sol.Pose2D(-9.4, -10.0, 0.0), [self.det(distance=0.35)], 0.0, posture="recover")
+        self.assertEqual(out.phase, "stand_up")
 
 
 if __name__ == "__main__":

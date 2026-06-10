@@ -484,7 +484,7 @@ class OpenWBTSquatBridge:
         self.policy_runner = policy_runner if policy_runner is not None else self._make_default_runner(policy_path)
         self._taskb_default = np.asarray(self.TASKB_DEFAULT_29, dtype=np.float32)
         self._openwbt_default = np.asarray(self.OPENWBT_DEFAULT_29, dtype=np.float32)
-        self._kp_ratio = np.asarray(self.KP_RATIO, dtype=np.float32)  # used by Task 2 gain compensation
+        self._kp_ratio = np.asarray(self.KP_RATIO, dtype=np.float32)  # online P-term gain compensation
         self.reset()
 
     def reset(self):
@@ -524,10 +524,12 @@ class OpenWBTSquatBridge:
             raise ValueError(f"squat runner returned {raw.shape[0]} actions, expected 12")
         raw[[5, 11]] = 0.0
         self.last_action = raw.copy()
-        # Task 1: 无补偿（静态偏移）。Task 2 替换为增益补偿。
-        target_q = raw * self.OPENWBT_ACTION_SCALE + self._openwbt_default[: self.NUM_ACTIONS]
-        action = (target_q - self._taskb_default[: self.NUM_ACTIONS]) / self.TASKB_ACTION_SCALE
-        action[[5, 11]] = 0.0  # keep ankle_roll at default (matters once Task 2 compensation is active)
+        # Task 2: 在线 P 项增益补偿。
+        q_abs = self._last_q_abs_legs
+        target_wbt = raw * self.OPENWBT_ACTION_SCALE + self._openwbt_default[: self.NUM_ACTIONS]
+        comp_target = q_abs + self._kp_ratio * (target_wbt - q_abs)
+        action = (comp_target - self._taskb_default[: self.NUM_ACTIONS]) / self.TASKB_ACTION_SCALE
+        action[[5, 11]] = 0.0
         return np.clip(action, -self.CLIP_ACTIONS, self.CLIP_ACTIONS).astype(np.float32).tolist()
 
     @staticmethod

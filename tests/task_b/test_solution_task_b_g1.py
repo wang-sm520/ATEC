@@ -559,5 +559,39 @@ class OpenWBTSquatBridgeObsTest(unittest.TestCase):
         self.assertEqual(len(leg), 12)
 
 
+@unittest.skipIf(np is None, "numpy not installed")
+class OpenWBTSquatGainCompTest(unittest.TestCase):
+    class ConstRunner:
+        def __init__(self, value):
+            self.value = value
+        def run(self, obs, hidden):
+            return np.full((1, 12), self.value, dtype=np.float32), hidden
+
+    def make_proprio(self):
+        # joint_pos_rel = 0 -> q_abs = taskb_default
+        return [[0.0] * (12 + 3 * 33)]
+
+    def test_ankle_roll_indices_zeroed(self):
+        bridge = sol.OpenWBTSquatBridge(policy_runner=self.ConstRunner(0.4))
+        leg = bridge.act(self.make_proprio(), sol.SquatCommand(height=0.4))
+        self.assertEqual(leg[5], 0.0)
+        self.assertEqual(leg[11], 0.0)
+
+    def test_hip_pitch_uses_kp_ratio(self):
+        # raw=0.4: target_WBT0 = 0.4*0.25 + (-0.1) = 0.0 ; q_abs0 = -0.2
+        # comp = -0.2 + 0.5*(0.0 - (-0.2)) = -0.2 + 0.1 = -0.1
+        # action = (-0.1 - (-0.2))/0.5 = 0.2
+        bridge = sol.OpenWBTSquatBridge(policy_runner=self.ConstRunner(0.4))
+        leg = bridge.act(self.make_proprio(), sol.SquatCommand(height=0.4))
+        self.assertAlmostEqual(leg[0], 0.2, places=4)
+
+    def test_ankle_pitch_amplified_vs_no_comp(self):
+        # ankle ratio 1.4 -> compensated magnitude larger than static-offset magnitude
+        bridge = sol.OpenWBTSquatBridge(policy_runner=self.ConstRunner(0.4))
+        leg = bridge.act(self.make_proprio(), sol.SquatCommand(height=0.4))
+        # compensated[4] = (-0.23 + 1.4*((-0.1)-(-0.23)) - (-0.23))/0.5 = (1.4*0.13)/0.5 = 0.364
+        self.assertAlmostEqual(leg[4], 0.364, places=3)
+
+
 if __name__ == "__main__":
     unittest.main()

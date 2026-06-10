@@ -198,3 +198,10 @@ Jacobian（每单位 action）：
 ### 意义 & 下一步
 这一个控制器就**替代了 走路+蹲下+扫地+手眼伺服 四件事**,且 kp/kd/默认角对齐 ATEC、能用手位姿命令做全身 IK 触达。
 → 下一步:把 MiniWBC 接进 AlgSolution。用已修准的感知(0.04m)拿到物体在 base 系坐标 → 命令 `right_hand_pose` 到物体处 + 降 base 高度 → WBC 全身触达 → hand_base_link 进 0.20m 得分。这才是真正能拿分的路径。
+
+## 触碰策略优化 v2（targeted descending sweep）
+之前 reach 是静态单点,易被定位误差(~0.1m 叠加)甩出 0.20m 球。改为:
+- 蹲更低 `REACH_BASE_HEIGHT 0.45→0.38`(手更易够到地面 0.12m);
+- 手 z 压到物体高度略下 `z = OBJECT_Z - 0.38 - 0.03 = -0.29`(world≈0.11);
+- **近侧手在物体估计点周围做 Lissajous 小扫**(±0.13m,周期 50/33 步)覆盖一片 ~0.25m 区域,4.4s 窗口内反复扫过物体邻域;
+- PostureGuard(tilt>0.35→recover)+ planner stand_up 作深蹲失稳的安全网。

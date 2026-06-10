@@ -561,9 +561,13 @@ class OpenWBTSquatBridge:
                     break
         if path is not None and os.path.exists(path):
             try:
-                return _OnnxSquatRunner(path)
-            except Exception:
-                pass
+                runner = _OnnxSquatRunner(path)
+                print(f"[task-b-g1] squat runner: ONNX ({path})")
+                return runner
+            except Exception as exc:  # pragma: no cover - depends on runtime onnxruntime
+                print(f"[task-b-g1] squat ONNX load failed ({exc}); using heuristic squat runner")
+                return _HeuristicSquatRunner()
+        print("[task-b-g1] squat runner: heuristic (no squat.onnx found)")
         return _HeuristicSquatRunner()
 
 
@@ -900,7 +904,7 @@ class AlgSolution:
 
         if plan.phase in ("squat_sweep", "stand_up"):
             cmd = plan.squat_command if plan.squat_command is not None else SquatCommand()
-            if posture == "recover":
+            if posture == "recover" and not isinstance(self.squat_bridge.policy_runner, _HeuristicSquatRunner):
                 # Within-episode fail-safe: degrade to the heuristic squat runner
                 # after a fall. squat_bridge.reset() restores the primary runner.
                 self.squat_bridge.policy_runner = _HeuristicSquatRunner()

@@ -602,7 +602,8 @@ class GroundSweepArmControllerTest(unittest.TestCase):
     def test_progress_zero_arms_near_stow(self):
         sweep = sol.GroundSweepArmController()
         out = sweep.step(squat_progress=0.0)
-        self.assertLess(abs(out.get(self.LEFT_SH_PITCH, 0.0)), 0.1)
+        self.assertAlmostEqual(out.get(self.LEFT_SH_PITCH, 0.0), 0.0, places=6)
+        self.assertAlmostEqual(out.get(self.LEFT_ELBOW, 0.0), 0.0, places=6)
 
     def test_progress_one_reaches_down(self):
         sweep = sol.GroundSweepArmController()
@@ -618,6 +619,17 @@ class GroundSweepArmControllerTest(unittest.TestCase):
             b_out = sweep.step(squat_progress=1.0)
         b = b_out[self.LEFT_SH_ROLL]
         self.assertNotAlmostEqual(a, b, places=3)
+
+    def test_left_right_roll_antisymmetric(self):
+        sweep = sol.GroundSweepArmController()
+        out = sweep.step(squat_progress=1.0)
+        self.assertAlmostEqual(out[self.RIGHT_SH_ROLL], -out[self.LEFT_SH_ROLL], places=10)
+
+    def test_fingers_open_at_full_squat(self):
+        sweep = sol.GroundSweepArmController()
+        out = sweep.step(squat_progress=1.0)
+        for idx in (29, 30, 31, 32):
+            self.assertAlmostEqual(out[idx], 0.4, places=6)
 
     def test_only_upper_body_indices(self):
         sweep = sol.GroundSweepArmController()

@@ -566,6 +566,7 @@ class GroundSweepArmController:
 
     输出 {action_index: value}，仅上肢 15..32。0.5-scale 归一化偏移量，初值启发式，
     由 scripts/probe_task_b_g1_squat.py 标定后调。
+    未列出的关节(肩yaw 17/24、腕 19-21/26-28)不覆盖，由调用方保留默认值。
     """
     L_SH_PITCH, L_SH_ROLL, L_SH_YAW, L_ELBOW = 15, 16, 17, 18
     R_SH_PITCH, R_SH_ROLL, R_SH_YAW, R_ELBOW = 22, 23, 24, 25

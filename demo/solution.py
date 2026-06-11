@@ -8,7 +8,8 @@ Per-``predicts()`` pipeline (all logic lives in the imported modules):
   -> unified FSM emitting one whole-body command (task_b_planner.TaskBPlanner)
   -> whole-body controller (mini_wbc.MiniWBC, policy18.onnx)
 
-This file holds NO planner logic, constants, or state machine — only the glue.
+This file holds NO planner/motion logic, constants, or state machine — only the
+glue (the perception throttle interval and the odometry spawn pose live here).
 
 Submission file set (upload flat, as the import root):
   solution.py, mini_wbc.py, task_b_nav.py, task_b_perception.py,

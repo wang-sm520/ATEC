@@ -5,6 +5,8 @@ import unittest
 
 import numpy as np
 
+from demo.task_b_planner import STOW_LEFT_HAND, STOW_RIGHT_HAND
+
 _HAVE_ORT = importlib.util.find_spec("onnxruntime") is not None
 if _HAVE_ORT:
     from demo.mini_wbc import MiniWBC, DEFAULT_LEFT_HAND, DEFAULT_RIGHT_HAND
@@ -32,6 +34,12 @@ class FingerPassthroughTest(unittest.TestCase):
         out = wbc.act(_zero_proprio_row(), [0, 0, 0], 0.75, [0, 0, 0],
                       list(DEFAULT_LEFT_HAND), list(DEFAULT_RIGHT_HAND))
         self.assertEqual(out[29:33], [0.0, 0.0, 0.0, 0.0])
+
+    def test_stow_constants_match_planner(self):
+        # The planner copies (does not import) the stow hand poses to stay
+        # onnx-free; this guards the two copies from drifting apart.
+        self.assertEqual(tuple(DEFAULT_LEFT_HAND), STOW_LEFT_HAND)
+        self.assertEqual(tuple(DEFAULT_RIGHT_HAND), STOW_RIGHT_HAND)
 
 
 if __name__ == "__main__":

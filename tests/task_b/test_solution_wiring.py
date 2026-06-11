@@ -8,6 +8,7 @@ needs onnxruntime and exercises the real MiniWBC.
 
 import importlib
 import importlib.util
+import math
 import unittest
 
 import numpy as np
@@ -61,15 +62,13 @@ class _CountingPerception:
 
 class SolutionWiringTest(unittest.TestCase):
     def setUp(self):
-        self._orig_wbc = solution.MiniWBC
-        self._orig_perc = solution.TaskBRgbdPerception
+        orig_wbc = solution.MiniWBC
+        orig_perc = solution.TaskBRgbdPerception
+        self.addCleanup(setattr, solution, "MiniWBC", orig_wbc)
+        self.addCleanup(setattr, solution, "TaskBRgbdPerception", orig_perc)
         _StubWBC.instances = []
         solution.MiniWBC = _StubWBC
         solution.TaskBRgbdPerception = _CountingPerception
-
-    def tearDown(self):
-        solution.MiniWBC = self._orig_wbc
-        solution.TaskBRgbdPerception = self._orig_perc
 
     def test_command_forwarded_verbatim_to_wbc(self):
         alg = solution.AlgSolution()
@@ -104,11 +103,12 @@ class SolutionWiringTest(unittest.TestCase):
         alg = solution.AlgSolution()
         perc = alg.perception
         self.assertIsInstance(perc, _CountingPerception)
-        for _ in range(10):
+        n_calls = 10
+        for _ in range(n_calls):
             alg.predicts(_zero_proprio_obs(), current_score=0.0)
-        # Steps 0 and 5 trigger perception with PERCEPTION_INTERVAL == 5.
-        self.assertEqual(solution.AlgSolution.PERCEPTION_INTERVAL, 5)
-        self.assertEqual(perc.update_calls, 2)
+        # Perception fires on steps 0, interval, 2*interval, ... within n_calls.
+        expected = math.ceil(n_calls / solution.AlgSolution.PERCEPTION_INTERVAL)
+        self.assertEqual(perc.update_calls, expected)
 
     def test_reset_reinitializes_components(self):
         alg = solution.AlgSolution()

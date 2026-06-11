@@ -302,6 +302,17 @@ class G1AMPRewardsCfg(BaseRewardsCfg):
         func=mdp.feet_orientation_euler, weight=0.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names="")},
     )
+    feet_min_clearance = RewTerm(
+        func=mdp.feet_min_clearance, weight=0.0,
+        params={
+            "command_name": "base_velocity",
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=""),
+            "asset_cfg": SceneEntityCfg("robot", body_names=""),
+            "min_height": 0.30,
+            "contact_threshold": 1.0,
+            "command_threshold": 0.1,
+        },
+    )
 
     # Joint deviation family (bxi has 6 separate terms)
     joint_dev_hip = RewTerm(
@@ -511,6 +522,9 @@ class UnitreeG1AMPRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.rewards.feet_orientation_l2_body.params["sensor_cfg"].body_names = [self.foot_link_name]
         self.rewards.feet_orientation_euler.weight = 0.25
         self.rewards.feet_orientation_euler.params["asset_cfg"].body_names = [self.foot_link_name]
+        self.rewards.feet_min_clearance.weight = -1.0
+        self.rewards.feet_min_clearance.params["sensor_cfg"].body_names = [self.foot_link_name]
+        self.rewards.feet_min_clearance.params["asset_cfg"].body_names = [self.foot_link_name]
 
         # Gait clock periodic
         self.rewards.gait_feet_frc_perio.weight = 1.0

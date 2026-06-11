@@ -48,7 +48,7 @@ python scripts/rsl_rl/train_amp.py \
 ```bash
 python scripts/rsl_rl/play_amp.py \
     --task=ATEC-Isaac-AMP-Unitree-G1-TaskA-v0 \
-    --num_envs=16 --real-time
+    --num_envs=16 
 ```
 
 `play_amp.py` 同时把 actor 导出到 `<run_dir>/exported/policy.pt` (TorchScript) 和 `policy.onnx`。

@@ -117,14 +117,36 @@ class UnitreeG1AMPTaskAEnvCfg(UnitreeG1AMPRoughEnvCfg):
                 #         border_width=0.25,
                 #     ),
                 # },
-                # === 地形配置 v3 (flat=40 / rough=60, 坡/台阶去除) ===  Sum = 100。
+                # === 地形配置 v3 (flat=40 / rough=60, 坡/台阶去除) — 暂时注释保留 ===  Sum = 100。
+                # sub_terrains={
+                #     "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.40),
+                #     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+                #         proportion=0.60,
+                #         noise_range=(0.02, 0.10),
+                #         noise_step=0.02,
+                #         border_width=0.25,
+                #     ),
+                # },
+                # === 地形配置 v4 (flat=45 / rough=20 / stairs_inv=35, 坡 & 下楼梯去除) ===
+                # 去掉正金字塔（机器人会重生在顶端、只练下楼梯）；只保留倒金字塔（底部重生→
+                # 上楼梯）+ 平地/糙地，专注「上楼梯 + 平地走」。台阶高 30-50cm / 踏面 0.5m，
+                # 为 Task D 过沟（坑深 1.0m / 箱高 0.6m / 平台 1.0-1.5m）训练 climb 策略。 Sum = 100。
                 sub_terrains={
-                    "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.40),
+                    "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.45),
                     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-                        proportion=0.60,
+                        proportion=0.20,
                         noise_range=(0.02, 0.10),
                         noise_step=0.02,
                         border_width=0.25,
+                    ),
+                    "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+                        proportion=0.35,
+                        # 原配置: step_height_range=(0.30, 0.50)
+                        step_height_range=(0.20, 0.40),
+                        step_width=0.5,
+                        platform_width=3.0,
+                        border_width=1.0,
+                        holes=False,
                     ),
                 },
             ),

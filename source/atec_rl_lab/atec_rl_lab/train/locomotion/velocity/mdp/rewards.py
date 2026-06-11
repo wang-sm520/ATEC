@@ -553,6 +553,31 @@ def feet_height_body(
     return reward
 
 
+def feet_min_clearance(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
+    min_height: float,
+    contact_threshold: float = 1.0,
+    command_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Penalize airborne feet below `min_height`, without penalizing higher swing clearance."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    contacts = (
+        contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0]
+        > contact_threshold
+    )
+    asset: RigidObject = env.scene[asset_cfg.name]
+    foot_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
+    clearance_error = (min_height - foot_z).clamp(min=0.0)
+    reward = torch.sum(torch.square(clearance_error) * (~contacts).float(), dim=1)
+    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > command_threshold
+    reward *= torch.clamp(-env.scene["robot"].data.projected_gravity_b[:, 2], 0, 0.7) / 0.7
+    return reward
+
+
+
 def feet_slide(
     env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:

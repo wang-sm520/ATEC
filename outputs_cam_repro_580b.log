@@ -1,0 +1,56 @@
+Loading user config located at: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: /home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260611_180615.log
+2026-06-11T10:06:15Z [0ms] [Warning] [carb.crashreporter-breakpad.plugin] [previous crash] preventing upload of minidump due to user opt-out: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/e5de09f1-caca-4503-4fab11ad-97b5c3dc.dmp'
+2026-06-11T10:06:15Z [1ms] [Warning] [carb.crashreporter-breakpad.plugin] [previous crash] preventing upload of minidump due to user opt-out: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/e8188167-f8f3-4a1e-48456ba4-318cc836.dmp'
+2026-06-11T10:06:15Z [1ms] [Warning] [carb.crashreporter-breakpad.plugin] [previous crash] preventing upload of minidump due to user opt-out: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/f58549ea-2d02-4555-41d89fa0-a4d39dd9.dmp'
+2026-06-11T10:06:15Z [1ms] [Warning] [carb.crashreporter-breakpad.plugin] [previous crash] preventing upload of minidump due to user opt-out: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/71ea11ba-4b99-434a-cbc59096-5acbab75.dmp'
+2026-06-11T10:06:16Z [430ms] [Warning] [gpu.foundation.plugin] Skipping unsupported non-NVIDIA GPU: Intel(R) Graphics (RPL-S)
+2026-06-11T10:06:16Z [430ms] [Warning] [gpu.foundation.plugin] Skipping unsupported non-NVIDIA GPU: Intel(R) Graphics (RPL-S)
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 580.159.03    | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 4090          | Yes: 0 |     | 24564   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2684      | f6dd97ac.. |
+|     |                                  |        |     |            | 1         |            |
+|---------------------------------------------------------------------------------------------|
+| 1   | Intel(R) Graphics (RPL-S)        |        |     | 47984   MB | 8086      | 0          |
+|     |                                  |        |     |            | a780      | 868080a7.. |
+|     |                                  |        |     |            | 0         |            |
+|=============================================================================================|
+| OS: 24.04.2 LTS (Noble Numbat) ubuntu, Version: 24.04.2, Kernel: 6.17.0-35-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101011 (1.21.1.11)
+| Processor: 13th Gen Intel(R) Core(TM) i9-13900K
+| Cores: 24 | Logical Cores: 32
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 63978 | Free Memory: 59669
+| Total Page/Swap (MB): 8191 | Free Page/Swap: 8191
+|---------------------------------------------------------------------------------------------|
+2026-06-11T10:06:16Z [644ms] [Warning] [gpu.foundation.plugin] CPU performance profile is set to powersave. This profile sets the CPU to the lowest frequency reducing performance.
+2026-06-11T10:06:16Z [652ms] [Warning] [gpu.foundation.plugin] IOMMU is enabled.
+2026-06-11T10:06:16Z [652ms] [Warning] [gpu.foundation.plugin] Detected IOMMU is enabled. Running CUDA peer-to-peer bandwidth and latency validation.
+Unidirectional P2P=Enabled Bandwidth (P2P Writes) Matrix (GB/s)
+   D\D    [INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: /home/hpf/atec/IsaacLab/apps/isaaclab.python.headless.rendering.kit
+CAMERA_APP_OK
+ 0 
+     0 910.02 
+P2P=Enabled Latency (P2P Writes) Matrix (us)
+   GPU     0 
+     0   1.38 
+
+   CPU     0 
+     0   1.23 
+2026-06-11T10:06:17Z [1,209ms] [Warning] [omni.log] Source: omni.hydra was already registered.
+2026-06-11T10:06:17Z [1,385ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-06-11T10:06:17Z [1,392ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+2026-06-11T10:06:18Z [2,863ms] [Warning] [pxr.Semantics] pxr.Semantics is deprecated - please use Semantics instead
+2026-06-11T10:06:18Z [2,940ms] [Warning] [omni.graph.core.plugin] Found duplicate of category 'Replicator' - was 'Annotators', adding 'Fabric Reader'
+2026-06-11T10:06:18Z [2,940ms] [Warning] [omni.graph.core.plugin] Category 'Replicator' not accepted on node type 'omni.replicator.core.FabricReader' in extension 'omni.replicator.core'
+2026-06-11T10:06:18Z [2,947ms] [Warning] [omni.replicator.core.scripts.extension] No material configuration file, adding configuration to material settings directly.
+2026-06-11T10:06:21Z [5,210ms] [Warning] [omni.fabric.plugin] Warning: attribute viewportHandle not found for bucket id 7
+

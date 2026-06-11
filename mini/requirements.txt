@@ -1,0 +1,8 @@
+mujoco
+numpy
+hydra-core
+omegaconf
+onnxruntime
+opencv-python
+scipy
+rich

@@ -61,6 +61,16 @@ APPROACH_STANDOFF = 0.25   # drive-to point sits this far short of the object
 BLIND_WALK_STEPS = 250     # max approach steps with no fresh sighting (5s @50Hz)
 MAX_ATTEMPTS = 2           # creep/squat attempts per object before giving up
 
+# Valid sighting band. The head camera is pitched ~47.6° down and is physically
+# blind for ground objects closer than ~0.62m (they fall below the frame); the
+# pinhole ground-projection is only reliable out to ~3m. A "detection" outside
+# this band is noise or the robot's own body, NOT a real object: it must never be
+# selected, remembered, or used to refresh the active target's coords (doing so is
+# exactly what made the robot lock phantoms and squat on empty floor).
+TARGET_MIN_DIST = 0.60     # below the head cam's ground-blind radius -> reject
+TARGET_MAX_DIST = 3.0      # beyond the reliable projection band -> reject
+REFRESH_MIN_DIST = 0.50    # a <0.5m "match" is noise; ignore it for refresh
+
 _STOW_QUAT = (1.0, 0.0, 0.0, 0.0)
 
 
@@ -99,6 +109,12 @@ class TaskBPlanner:
         self.stand_from_height = SQUAT_HEIGHT
 
     # ------------------------------------------------------------------ helpers
+    @staticmethod
+    def _in_sighting_band(distance: float) -> bool:
+        """A detection is a real, trustworthy sighting only within the head cam's
+        physically-visible ground band; outside it is noise/own-body."""
+        return TARGET_MIN_DIST <= distance <= TARGET_MAX_DIST
+
     def _exhausted(self, track_id: int) -> bool:
         return track_id in self.scored or self.attempts.get(track_id, 0) >= MAX_ATTEMPTS
 
@@ -110,7 +126,9 @@ class TaskBPlanner:
         (b) nearest non-exhausted remembered object, else None."""
         fresh = [
             d for d in detections
-            if d.confidence >= CONFIDENCE_FLOOR and not self._exhausted(d.track_id)
+            if d.confidence >= CONFIDENCE_FLOOR
+            and self._in_sighting_band(d.distance)
+            and not self._exhausted(d.track_id)
         ]
         if fresh:
             best = min(fresh, key=lambda d: (d.distance, -d.confidence))
@@ -215,7 +233,7 @@ class TaskBPlanner:
         # memory and later be pursued via the memory-selection branch (the fresh
         # branch already gates on confidence; the memory branch does not).
         for d in detections:
-            if d.confidence >= CONFIDENCE_FLOOR:
+            if d.confidence >= CONFIDENCE_FLOOR and self._in_sighting_band(d.distance):
                 self.memory[d.track_id] = (d.world_x, d.world_y)
 
         # 3. global safety: a recover while not already standing up -> stand_up
@@ -241,12 +259,14 @@ class TaskBPlanner:
 
     def _refresh_active(self, detections: list[Detection]) -> bool:
         """If a detection matches the active track_id, refresh coords + reset the
-        blind counter. Returns True when refreshed."""
+        blind counter. Returns True when refreshed. A matching detection closer than
+        REFRESH_MIN_DIST is ignored (treated as unseen): the real object is invisible
+        that close, so the "match" is noise that would corrupt the remembered coords."""
         if self.active is None:
             return False
         tid = self.active[0]
         for d in detections:
-            if d.track_id == tid:
+            if d.track_id == tid and d.distance >= REFRESH_MIN_DIST:
                 self.active = (tid, d.world_x, d.world_y)
                 self.steps_since_seen = 0
                 return True

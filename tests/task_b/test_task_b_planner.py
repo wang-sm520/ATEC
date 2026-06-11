@@ -42,6 +42,17 @@ def det(track_id, wx, wy, pose, confidence=1.0):
     )
 
 
+def seed_active(plr, target, _near_pose=None):
+    """Drive the planner into `approach` with `target` locked as the active target,
+    using a VALID in-band sighting (the real flow: see the object from >=0.6m, then
+    close in). The planner remembers the world coords, so subsequent steps from a
+    near pose (within ARRIVE_DIST) arrive on the remembered point exactly as before
+    the sighting-band gate existed. Returns after the selecting step."""
+    far = Pose2D(target[0] - 1.5, target[1], 0.0)  # 1.5m away, dead ahead, in band
+    plr.step(far, [det(1, *target, far)], 0.0)      # select + approach (in-band)
+    return plr
+
+
 class SearchPhaseTest(unittest.TestCase):
     def test_search_rotate_then_relocate_cycle(self):
         plr = TaskBPlanner()
@@ -83,6 +94,68 @@ class SelectionTest(unittest.TestCase):
         d = det(1, -8.0, -10.0, pose, confidence=0.1)
         cmd = plr.step(pose, [d], 0.0)
         self.assertEqual(cmd.phase, "search")
+
+
+class SightingBandTest(unittest.TestCase):
+    """Targets must be seen at a physically-possible distance (head cam blind below
+    ~0.62m, projection unreliable beyond ~3m). Detections outside the band are
+    noise/own-body and must never be selected, remembered, or used to refresh the
+    active target. Regression-guards the legit blind-walk flow for an in-band sighting.
+    """
+
+    def test_too_close_detection_never_selected(self):
+        plr = TaskBPlanner()
+        pose = Pose2D(-10.0, -10.0, 0.0)
+        d = det(1, -9.7, -10.0, pose)  # 0.30m dead ahead -> below TARGET_MIN_DIST
+        self.assertLess(d.distance, P.TARGET_MIN_DIST)
+        cmd = plr.step(pose, [d], 0.0)
+        self.assertEqual(cmd.phase, "search")  # not selected
+
+    def test_too_close_detection_never_enters_memory(self):
+        plr = TaskBPlanner()
+        pose = Pose2D(-10.0, -10.0, 0.0)
+        d = det(7, -9.7, -10.0, pose)  # 0.30m -> phantom
+        plr.step(pose, [d], 0.0)
+        self.assertNotIn(7, plr.memory)  # must not leak into memory
+
+    def test_too_close_detection_never_refreshes_active(self):
+        plr = TaskBPlanner()
+        target = (-8.0, -10.0)
+        pose = Pose2D(-10.0, -10.0, 0.0)
+        plr.step(pose, [det(1, *target, pose)], 0.0)  # in-band sighting -> approach
+        # A later "match" for track 1 at <REFRESH_MIN_DIST must be ignored: the real
+        # object is invisible that close, so it cannot refresh the remembered coords.
+        bad = det(1, pose.x + 0.30, pose.y, pose)  # 0.30m -> below REFRESH_MIN_DIST
+        self.assertLess(bad.distance, P.REFRESH_MIN_DIST)
+        before = plr.active
+        plr.step(pose, [bad], 0.0)
+        self.assertEqual(plr.active, before)  # coords unchanged
+        self.assertEqual(plr.steps_since_seen, 1)  # treated as unseen this frame
+
+    def test_in_band_detection_blind_walks_exactly_as_before(self):
+        """Regression guard: a valid 1.5m sighting selects, approaches, blind-walks
+        on memory while unseen, and arrives at ARRIVE_DIST -> creep — unchanged."""
+        plr = TaskBPlanner()
+        target = (-8.5, -10.0)  # 1.5m dead ahead -> inside band
+        pose = Pose2D(-10.0, -10.0, 0.0)
+        cmd = plr.step(pose, [det(1, *target, pose)], 0.0)
+        self.assertEqual(cmd.phase, "approach")
+        self.assertEqual(cmd.target_world, target)
+        for _ in range(100):  # 100 blind steps: still approaching
+            cmd = plr.step(pose, [], 0.0)
+            self.assertEqual(cmd.phase, "approach")
+        near = Pose2D(target[0] - 0.3, target[1], 0.0)  # within ARRIVE_DIST
+        cmd = plr.step(near, [], 0.0)
+        self.assertEqual(cmd.phase, "creep")
+
+    def test_too_far_detection_ignored_for_selection_and_memory(self):
+        plr = TaskBPlanner()
+        pose = Pose2D(-10.0, -10.0, 0.0)
+        d = det(9, -6.5, -10.0, pose)  # 3.5m dead ahead -> beyond TARGET_MAX_DIST
+        self.assertGreater(d.distance, P.TARGET_MAX_DIST)
+        cmd = plr.step(pose, [d], 0.0)
+        self.assertEqual(cmd.phase, "search")  # not selected
+        self.assertNotIn(9, plr.memory)  # not remembered
 
 
 class BlindWalkTest(unittest.TestCase):
@@ -132,7 +205,8 @@ class BlindWalkTest(unittest.TestCase):
 class CreepTest(unittest.TestCase):
     def _drive_to_creep(self, plr, target):
         pose = Pose2D(target[0] - 0.3, target[1], 0.0)
-        plr.step(pose, [det(1, *target, pose)], 0.0)  # approach, already within ARRIVE
+        seed_active(plr, target, pose)  # in-band sighting locks the target
+        plr.step(pose, [], 0.0)  # now within ARRIVE_DIST (blind) -> creep
         cmd = plr.step(pose, [], 0.0)
         self.assertEqual(cmd.phase, "creep")
         return pose
@@ -155,8 +229,8 @@ class CreepTest(unittest.TestCase):
         # Target within ARRIVE_DIST but offset to the robot's LEFT (yaw 0, +y is left).
         target = (-9.85, -9.75)  # dist ~0.29 < ARRIVE_DIST, bearing > 0
         pose = Pose2D(-10.0, -10.0, 0.0)
-        plr.step(pose, [det(1, *target, pose)], 0.0)  # arrive -> creep
-        cmd = plr.step(pose, [], 0.0)
+        seed_active(plr, target, pose)  # in-band sighting locks the target
+        cmd = plr.step(pose, [], 0.0)  # arrive blind -> creep
         self.assertEqual(cmd.phase, "creep")
         self.assertAlmostEqual(cmd.vel[0], P.CREEP_VEL)
         # bearing to a left-offset target is positive -> wz aims left (> 0).
@@ -167,9 +241,10 @@ class CreepTest(unittest.TestCase):
 
 class SquatSweepTest(unittest.TestCase):
     def _enter_squat(self, plr, target, pose):
-        """pose MUST be within ARRIVE_DIST of target so approach -> creep -> squat."""
-        plr.step(pose, [det(1, *target, pose)], 0.0)  # approach, arrives immediately
-        for _ in range(P.CREEP_STEPS + 1):
+        """pose MUST be within ARRIVE_DIST of target so approach -> creep -> squat.
+        Seeds the active target via a valid in-band sighting, then arrives blind."""
+        seed_active(plr, target, pose)  # in-band sighting locks the target
+        for _ in range(P.CREEP_STEPS + 2):
             cmd = plr.step(pose, [], 0.0)
         self.assertEqual(cmd.phase, "squat_sweep")
         return cmd
@@ -277,8 +352,8 @@ class StandUpTest(unittest.TestCase):
         plr = TaskBPlanner()
         target = (-8.0, -10.0)
         pose = Pose2D(-8.3, -10.0, 0.0)
-        plr.step(pose, [det(1, *target, pose)], 0.0)
-        for _ in range(P.CREEP_STEPS + 1):
+        seed_active(plr, target, pose)  # in-band sighting
+        for _ in range(P.CREEP_STEPS + 2):
             plr.step(pose, [], 0.0)
         # score to leave squat
         cmd = plr.step(pose, [], 1.0)
@@ -298,10 +373,13 @@ class StandUpTest(unittest.TestCase):
         plr = TaskBPlanner()
         t1 = (-8.0, -10.0)
         t2 = (-9.0, -11.0)
-        pose = Pose2D(-8.3, -10.0, 0.0)  # within ARRIVE_DIST of t1, far from t2
-        # See both; approach t1 (nearer).
-        plr.step(pose, [det(1, *t1, pose), det(2, *t2, pose)], 0.0)
-        for _ in range(P.CREEP_STEPS + 1):
+        # See both from a vantage where each is in the valid sighting band, so t1 is
+        # selected (nearer) and t2 enters memory; then arrive at t1.
+        far = Pose2D(-8.8, -10.0, 0.0)  # t1 0.8m, t2 ~1.0m: both in band, t1 nearer
+        plr.step(far, [det(1, *t1, far), det(2, *t2, far)], 0.0)
+        self.assertEqual(plr.active[0], 1)  # t1 selected (and t2 remembered)
+        pose = Pose2D(-8.3, -10.0, 0.0)  # now within ARRIVE_DIST of t1, far from t2
+        for _ in range(P.CREEP_STEPS + 2):
             plr.step(pose, [], 0.0)
         plr.step(pose, [], 1.0)  # touch t1, stand_up
         cmd = None
@@ -317,16 +395,17 @@ class MaxAttemptsTest(unittest.TestCase):
         plr = TaskBPlanner()
         target = (-8.0, -10.0)
         pose = Pose2D(target[0] - 0.3, target[1], 0.0)
+        far = Pose2D(target[0] - 1.5, target[1], 0.0)  # in-band sighting vantage
         for attempt in range(P.MAX_ATTEMPTS):
-            plr.step(pose, [det(1, *target, pose)], 0.0)  # approach within arrive
+            plr.step(far, [det(1, *target, far)], 0.0)  # select via in-band sighting
             # creep + squat to timeout, no score -> stand_up
-            for _ in range(P.CREEP_STEPS + P.SQUAT_SWEEP_MAX_STEPS + 2):
+            for _ in range(P.CREEP_STEPS + P.SQUAT_SWEEP_MAX_STEPS + 3):
                 plr.step(pose, [], 0.0)
             for _ in range(P.STAND_RAMP_STEPS + 1):
                 plr.step(pose, [], 0.0)
         self.assertGreaterEqual(plr.attempts.get(1, 0), P.MAX_ATTEMPTS)
-        # Now exhausted: a fresh detection must not be selected.
-        cmd = plr.step(pose, [det(1, *target, pose)], 0.0)
+        # Now exhausted: a fresh in-band detection must not be selected.
+        cmd = plr.step(far, [det(1, *target, far)], 0.0)
         self.assertEqual(cmd.phase, "search")
 
 
@@ -352,16 +431,18 @@ class ScoreDuringPursuitTest(unittest.TestCase):
     def test_score_on_arrival_transition_step_not_lost(self):
         plr = TaskBPlanner()
         target = (-8.0, -10.0)
+        seed_active(plr, target, None)  # in-band sighting -> approach, target locked
         pose = Pose2D(-8.3, -10.0, 0.0)  # within ARRIVE_DIST: this step hands off
-        # The first step both selects+arrives (approach -> creep handoff) AND carries
-        # a score increase. The delta must not be dropped on the transition: the
-        # approach-level score check claims the object before reaching creep.
-        cmd = plr.step(pose, [det(1, *target, pose)], 1.0)
+        # This step arrives (approach -> creep handoff) AND carries a score increase.
+        # The delta must not be dropped on the transition: the approach-level score
+        # check claims the object before reaching creep.
+        cmd = plr.step(pose, [], 1.0)
         self.assertEqual(cmd.phase, "stand_up")
         self.assertIn(1, plr.scored)
-        # And the claimed object is never re-selected afterward.
+        # And the claimed object is never re-selected afterward (in-band sighting).
+        far = Pose2D(target[0] - 1.5, target[1], 0.0)
         for _ in range(P.STAND_RAMP_STEPS + 1):
-            cmd = plr.step(pose, [det(1, *target, pose)], 1.0)
+            cmd = plr.step(far, [det(1, *target, far)], 1.0)
         self.assertNotEqual(cmd.target_world, target)
 
 
@@ -378,7 +459,8 @@ class RecoverTest(unittest.TestCase):
         plr = TaskBPlanner()
         target = (-8.0, -10.0)
         pose = Pose2D(-8.3, -10.0, 0.0)  # within ARRIVE_DIST -> approach->creep
-        plr.step(pose, [det(1, *target, pose)], 0.0)  # arrive -> creep
+        seed_active(plr, target, pose)  # in-band sighting -> approach
+        plr.step(pose, [], 0.0)  # arrive blind -> creep
         cmd = plr.step(pose, [], 0.0)
         self.assertEqual(cmd.phase, "creep")  # genuinely in creep between steps
         cmd = plr.step(pose, [], 0.0, posture="recover")
@@ -391,9 +473,9 @@ class RecoverTest(unittest.TestCase):
         plr = TaskBPlanner()
         target = (-8.0, -10.0)
         pose = Pose2D(-8.3, -10.0, 0.0)  # within ARRIVE_DIST so we actually reach squat
-        plr.step(pose, [det(1, *target, pose)], 0.0)  # arrive -> creep
+        seed_active(plr, target, pose)  # in-band sighting -> approach
         cmd = None
-        for _ in range(P.CREEP_STEPS + 1):
+        for _ in range(P.CREEP_STEPS + 2):
             cmd = plr.step(pose, [], 0.0)
         self.assertEqual(cmd.phase, "squat_sweep")  # confirm we are genuinely squatting
         cmd = plr.step(pose, [], 0.0, posture="recover")
@@ -486,7 +568,7 @@ class IntegrationWalkTest(unittest.TestCase):
     def test_full_fsm_sequence(self):
         plr = TaskBPlanner()
         t1 = (-8.0, -10.0)   # 2.0m from far -> selected first
-        t2 = (-7.0, -12.0)   # ~3.6m from far -> approached later from memory
+        t2 = (-7.5, -11.5)   # ~2.9m from far (in band) -> approached later from memory
         phases = []
 
         def record(pose, dets, score, posture="ok"):

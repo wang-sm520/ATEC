@@ -273,3 +273,66 @@ The probe crashed identically twice in a row (`outputs_squat_probe_refactor.log`
 Note: prior camera runs on **2026-06-10** worked (`outputs_squat_probe_v4.log` reached env-creation + DLSS rendering; `outputs_eval_smoke.log` printed a score), so this RTX init failure is a state change on the machine since yesterday, NOT caused by the refactor. The OV shader cache (`~/.cache/ov`, dated 2026-04-09) predates the working runs, so stale-cache corruption is not clearly the cause.
 
 **Not self-fixed (out of scope + user wants to be consulted before debugging):** clearing the 3.4G `~/.cache/ov` cache, GPU driver/renderer changes, or display-session changes are environment-/system-level actions outside "empirical validation + small ratified tuning." Needs the user to recover the RTX renderer (e.g. confirm display session / try a fresh `~/.cache/ov`), after which the probe + evals can run unchanged.
+
+## 2026-06-12 Refactor validation on new machine (RTX 5060 laptop, isaaclab 0.54.4)
+
+Environment: fresh RTX 5060 Laptop GPU (8GB), driver 580.159.03, conda `atec` =
+isaacsim 5.1.0 + isaaclab 0.54.4 (editable ~/wsm/IsaacLab) + torch 2.7.0+cu128 +
+onnxruntime 1.26.0 + atec_rl_lab editable. Headless Isaac + cameras STABLE here
+(no crashes, the RTX-init failure from the 4090 machine on 2026-06-10 is gone).
+No version-skew API breakage: `demo.solution.AlgSolution` + atec_rl_lab tasks
+import and run unchanged on isaaclab 0.54.4. `test_task_b_planner` 26 tests green.
+
+Throughput (cameras on, 1 env): ~21.7 sim-seconds per wall-minute
+(300 sim-s in ~830 stepping-s; video capture adds little — run1-with-video and
+run2-no-video both ~15-17 min wall). Startup ~90s (shader compile). For a 5-min
+wall budget use ~75-90 sim-seconds per run.
+
+### Probe (scripts/probe_task_b_g1_squat.py, 800 steps)
+Squat-phase MIN 3D HAND-object distance = **0.179 m** at step 630 (left hand,
+object_4, hand z=0.232). PASS (<=0.20m; old baseline 0.56m). No fall in the probe.
+So the squat/sweep GEOMETRY works — when the robot is positioned over an object,
+a hand reaches within 0.18m.
+
+### Scored evals (eval_task_b_g1_wbc.py, 300 sim-s each)
+- run1 (with video): score **4.00**, touched [11,14,21,41], no fall, full 300s.
+  Points landed at sim t=20.5/40.1/69.2/170.3s. video logs/videos/task_b_g1_wbc/refactor_run1.mp4
+- run2 (no video): score **0.00**, touched [], no fall, full 300s.
+- run3 (no video): score **0.00**, touched [], **FELL** (terminated t=202s, base_z->0.11).
+Verdict: mean 1.33 / 300 sim-s, zero-score rate 2/3, FALL rate 1/3 (2/4 counting the diag run).
+FAILS acceptance (needed mean>=4, zero falls).
+
+### Root-cause diagnosis (scripts/diag_task_b_g1_approach.py — privileged: odom vs TRUE pose + true object distances; 933 steps before it FELL)
+The robot churns ~116-121 approach->creep->squat->stand cycles per episode (~2.5s
+each) but **barely moves** — TRUE base travels only ~2.75m total over the whole
+diag episode, drifting in a small bubble near spawn. It NEVER enters `search`
+(0 search steps): it keeps re-locking sparse near detections and squatting in place.
+Key numbers:
+- Detection rate only **26%** of steps (head cam sees a narrow ground band; mostly 0-2 blobs).
+- Squat phase: nearest TRUE object median **1.27m** from base; **55% of squat steps
+  the base is >1.0m from any object** (hands sweep empty floor); only **43%** within
+  base-0.6m where hands could plausibly reach. Min base-obj 0.09m (the lucky moments
+  that scored run1's points).
+- Odometry drift grows to **0.50m** by end — dead reckoning diverges, so even
+  correctly-remembered targets get mislocated over time.
+- Arrival gate `pose.distance_to(target_world) <= ARRIVE_DIST(0.35)`: target_world
+  is derived from the same odom pose + perception offset, so the gate distance ==
+  the detection ground distance. Detections at 0.12-0.35m (below the head cam's
+  ~0.7m blind radius => noise/misprojection) let the planner "arrive" without walking.
+Classification: mostly **(c) arrives-but-sweep-misses** (squats on empty floor
+1+m from objects) compounded by **(b) approach never really walks** (locks noise
+detections, never searches). NOT an attribution bug. run1 vs run2/3 = same code,
+different layout: run1's drift bubble happened to overlap objects.
+
+### FALLS (instant stop-and-report per directive)
+run3 terminated t=202s base_z=0.11; diag run terminated step 933. The deep squat
+(base 0.30) + repeated stand cycling is destabilizing on some layouts. Balance is a
+user-consult item — NOT self-tuned.
+
+### Recommended fixes (ranked; awaiting ratification before code change)
+1. Reject too-close (<~0.6m, below cam blind radius) detections as targets so the
+   planner locks only real visible objects and WALKS to them (kills empty-floor squat).
+2. Force `search` when `active` can't be refreshed by a fresh detection (stop blind re-squat).
+3. Raise CONFIDENCE_FLOOR / min blob size to filter misprojected specks.
+4. Cap squat attempts per region + periodic re-search to escape the 2.75m bubble.
+None touch SQUAT_HEIGHT/HAND_Z/REACH/LAT/sweep periods/STOW/mini_wbc/perception projection.

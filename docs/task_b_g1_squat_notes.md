@@ -225,3 +225,24 @@ squat_sweep 阶段:先 `CREEP_STEPS=30` 步以 0.22m/s 朝物体蹭近(站立)�
 - **搜索**:看不到物体就**原地旋转扫描**(yaw 1.3 rad/s);转一圈(185步)还没检测到就**前进 75 步换块地再转**(因头相机只看 0.7–2.5m,纯原地转会漏远处)。检测到→planner 转 approach。
 - **提速**:approach 速度命令 ×1.9(钳到 vx 0.6 / vy 0.4 / wz 1.6),creep 0.22→0.35。
 - 整圈循环:旋转找物体→接近→蹭近→蹲0.3→双手平扫→起身→(_search_step 复位)重新旋转找下一个,直到超时。
+
+## 2026-06-11 Refactor validation (unified planner + blind-walk arrival)
+
+**Verdict: BLOCKED — environment-level RTX renderer crash, no validation runs could execute.**
+
+### What the harness scripts drive (Step 0 — fixed)
+Both probe/eval scripts were importing the LEGACY pipeline. Repointed to the refactored `demo.solution.AlgSolution`:
+- `scripts/probe_task_b_g1_squat.py:36` — was `from demo.solution_task_b_g1 import AlgSolution` → now `from demo.solution import AlgSolution`.
+- `scripts/eval_task_b_g1_wbc.py:40` — was `from demo.solution_task_b_g1_wbc import AlgSolution` → now `from demo.solution import AlgSolution`. Also: the new unified `TaskBPlanner` exposes `scored` (set of objects that produced a score increase) instead of the legacy `touched_track_ids`; updated the eval's two reads to `getattr(planner, "scored", getattr(planner, "touched_track_ids", set()))` so it prints the right set and never crashes on either planner.
+- Compatibility verified WITHOUT Isaac: `predicts(obs, score) -> {"action","giveup"}` signature, `obs["image"]` keys (`head_rgb`/`head_depth`/`ee_dual_rgb`) consumed by perception+video, and `planner.phase` all match. `python -m unittest discover -s tests/task_b` = **126 passed (29 torch/onnx skipped in bare shell)**. Both scripts `py_compile`-clean.
+
+### Blocker: Isaac Sim crashes on every `--enable_cameras` launch (SIGSEGV in RTX renderer)
+Every camera-enabled run dies ~0.3s into `AppLauncher(...)`, **before any solution code is imported or run** (py-spy main-thread top frame: `__enable_hydra_engine` → `createHydraEngine`; native fault in `librtx.scenedb.plugin.so` `carbOnPluginStartup`, signal 11 / exit 139). Isolated with a 12-line minimal repro containing none of this project's code:
+- `AppLauncher(['--headless'])` → **starts OK** (exit 0, `APP_STARTED_OK`).  [log: `outputs_minimal_nocam.log`]
+- `AppLauncher(['--headless','--enable_cameras'])` → **SIGSEGV in `librtx.scenedb.plugin.so`** (exit 139).  [log: `outputs_minimal_cam.log`]
+
+The probe crashed identically twice in a row (`outputs_squat_probe_refactor.log`). The crash is the RTX ray-tracer failing to initialize, which `--enable_cameras` forces on. GPU itself is healthy (RTX 4090, driver 595.71.05, 35°C, idle, ~1.5G used by the desktop session only; no zombie Isaac procs). The Task B perception pipeline REQUIRES cameras, so probe (Step 1) and the 3×300s scored evals (Step 2) **could not be run** — squat-phase nearest-distance numbers, per-run scores, and fall checks are all unavailable.
+
+Note: prior camera runs on **2026-06-10** worked (`outputs_squat_probe_v4.log` reached env-creation + DLSS rendering; `outputs_eval_smoke.log` printed a score), so this RTX init failure is a state change on the machine since yesterday, NOT caused by the refactor. The OV shader cache (`~/.cache/ov`, dated 2026-04-09) predates the working runs, so stale-cache corruption is not clearly the cause.
+
+**Not self-fixed (out of scope + user wants to be consulted before debugging):** clearing the 3.4G `~/.cache/ov` cache, GPU driver/renderer changes, or display-session changes are environment-/system-level actions outside "empirical validation + small ratified tuning." Needs the user to recover the RTX renderer (e.g. confirm display session / try a fresh `~/.cache/ov`), after which the probe + evals can run unchanged.

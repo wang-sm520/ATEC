@@ -1,0 +1,544 @@
+Loading user config located at: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: /home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260611_154344.log
+2026-06-11T07:43:44Z [0ms] [Warning] [carb.crashreporter-breakpad.plugin] [previous crash] preventing upload of minidump due to user opt-out: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/f58549ea-2d02-4555-41d89fa0-a4d39dd9.dmp'
+2026-06-11T07:43:44Z [1ms] [Warning] [carb.crashreporter-breakpad.plugin] [previous crash] preventing upload of minidump due to user opt-out: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/71ea11ba-4b99-434a-cbc59096-5acbab75.dmp'
+2026-06-11T07:43:44Z [500ms] [Warning] [gpu.foundation.plugin] Skipping unsupported non-NVIDIA GPU: Intel(R) Graphics (RPL-S)
+2026-06-11T07:43:44Z [500ms] [Warning] [gpu.foundation.plugin] Skipping unsupported non-NVIDIA GPU: Intel(R) Graphics (RPL-S)
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 595.71.05     | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 4090          | Yes: 0 |     | 24564   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2684      | f6dd97ac.. |
+|     |                                  |        |     |            | 1         |            |
+|---------------------------------------------------------------------------------------------|
+| 1   | Intel(R) Graphics (RPL-S)        |        |     | 47984   MB | 8086      | 0          |
+|     |                                  |        |     |            | a780      | 868080a7.. |
+|     |                                  |        |     |            | 0         |            |
+|=============================================================================================|
+| OS: 24.04.2 LTS (Noble Numbat) ubuntu, Version: 24.04.2, Kernel: 6.17.0-35-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101011 (1.21.1.11)
+| Processor: 13th Gen Intel(R) Core(TM) i9-13900K
+| Cores: 24 | Logical Cores: 32
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 63978 | Free Memory: 54348
+| Total Page/Swap (MB): 8191 | Free Page/Swap: 8191
+|---------------------------------------------------------------------------------------------|
+2026-06-11T07:43:45Z [717ms] [Warning] [gpu.foundation.plugin] CPU performance profile is set to powersave. This profile sets the CPU to the lowest frequency reducing performance.
+2026-06-11T07:43:45Z [727ms] [Warning] [gpu.foundation.plugin] IOMMU is enabled.
+2026-06-11T07:43:45Z [727ms] [Warning] [gpu.foundation.plugin] Detected IOMMU is enabled. Running CUDA peer-to-peer bandwidth and latency validation.
+Unidirectional P2P=Enabled Bandwidth (P2P Writes) Matrix (GB/s)
+   D\D     0 
+     0 917.50 
+P2P=Enabled Latency (P2P Writes) Matrix (us)
+   GPU     0 
+     0   1.42 
+
+   CPU     0 
+     0   1.30 
+2026-06-11T07:43:45Z [1,288ms] [Warning] [omni.log] Source: omni.hydra was already registered.
+2026-06-11T07:43:45Z [1,465ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-06-11T07:43:45Z [1,472ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+2026-06-11T07:43:47Z [2,960ms] [Warning] [pxr.Semantics] pxr.Semantics is deprecated - please use Semantics instead
+2026-06-11T07:43:47Z [3,031ms] [Warning] [omni.graph.core.plugin] Found duplicate of category 'Replicator' - was 'Annotators', adding 'Fabric Reader'
+2026-06-11T07:43:47Z [3,031ms] [Warning] [omni.graph.core.plugin] Category 'Replicator' not accepted on node type 'omni.replicator.core.FabricReader' in extension 'omni.replicator.core'
+2026-06-11T07:43:47Z [3,032ms] [Warning] [omni.replicator.core.scripts.extension] No material configuration file, adding configuration to material settings directly.
+2026-06-11T07:43:48Z [0ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash] A crash has occurred.  If a debugger should be attached, please set the '/crashreporter/debuggerAttachTimeoutMs' setting to a timeout in milliseconds.  This can be used to allow the crash reporter to wait for up to that long for a debugger to attach before processing or sending the crash report.
+2026-06-11T07:43:48Z [43ms] [Error] [carb.crashreporter-breakpad.plugin] [crash] Wrote dump file '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/e8188167-f8f3-4a1e-48456ba4-318cc836.dmp'
+2026-06-11T07:43:48Z [44ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash] preventing upload of minidump due to user opt-out: '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/e8188167-f8f3-4a1e-48456ba4-318cc836.dmp'
+2026-06-11T07:43:48Z [44ms] [Error] [carb.crashreporter-breakpad.plugin] [crash]     dump file size is 4631200 bytes, file is readable.
+2026-06-11T07:43:48Z [45ms] [Fatal] [carb.crashreporter-breakpad.plugin] [crash] Crash detected in pid 835014 thread 835014
+2026-06-11T07:43:48Z [45ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash] Crash metadata:
+2026-06-11T07:43:48Z [46ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  BuildGitlabJobID = '209507876'
+2026-06-11T07:43:48Z [46ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  CarbSdkVersion = '206.6+release.9587.07f17b1b.gl'
+2026-06-11T07:43:48Z [47ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  CrashTime = 'Thu Jun 11 07:43:48 2026 GMT'
+2026-06-11T07:43:48Z [47ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  DriverShaderCacheWrapper = 'disabled'
+2026-06-11T07:43:48Z [48ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  DumpId = 'e8188167-f8f3-4a1e-48456ba4-318cc836'
+2026-06-11T07:43:48Z [48ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  LastUploadStatus = '0'
+2026-06-11T07:43:48Z [49ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  ProductName = 'OmniverseKit'
+2026-06-11T07:43:48Z [49ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  PythonTracebackStatus = ''py-spy' successfully wrote info to '/home/hpf/miniconda3/envs/atec/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/e8188167-f8f3-4a1e-48456ba4-318cc836.py.txt''
+2026-06-11T07:43:48Z [50ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  RetryCount = '0'
+2026-06-11T07:43:48Z [50ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  StartupTime = '1781163824'
+2026-06-11T07:43:48Z [51ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  UploadSuccessful = '0'
+2026-06-11T07:43:48Z [51ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  UptimeSeconds = '4'
+2026-06-11T07:43:48Z [51ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  UserStory = ''
+2026-06-11T07:43:48Z [52ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  UserStoryStatus = 'Running in headless mode; not gathering user story'
+2026-06-11T07:43:48Z [52ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  Version = '107.3.3+production.229672.69cbf6ad.gl'
+2026-06-11T07:43:48Z [53ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  aftermath_enabled = '1'
+2026-06-11T07:43:48Z [53ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  aftermath_flags = '3'
+2026-06-11T07:43:48Z [54ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  aftermath_status = 'auto-enabled'
+2026-06-11T07:43:48Z [54ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  aftermath_version = '2024.1'
+2026-06-11T07:43:48Z [55ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  appName = 'Isaac-Sim'
+2026-06-11T07:43:48Z [55ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  appState = 'started'
+2026-06-11T07:43:48Z [55ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  appVersion = '5.1.0'
+2026-06-11T07:43:48Z [56ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  autoloadExts = ''
+2026-06-11T07:43:48Z [56ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildBranch = 'production'
+2026-06-11T07:43:48Z [57ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildCi = 'gl'
+2026-06-11T07:43:48Z [57ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildConfig = 'release'
+2026-06-11T07:43:48Z [58ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildGitlabJobName = 'kit-build-release-linux-x86_64'
+2026-06-11T07:43:48Z [58ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildGitlabJobStage = 'kit-build'
+2026-06-11T07:43:48Z [59ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildGitlabPipelineID = '34875094'
+2026-06-11T07:43:48Z [59ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildHash = '69cbf6ad'
+2026-06-11T07:43:48Z [59ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildMajor = '107'
+2026-06-11T07:43:48Z [60ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildMinor = '3'
+2026-06-11T07:43:48Z [60ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildNumber = '229672'
+2026-06-11T07:43:48Z [61ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildPatch = '3'
+2026-06-11T07:43:48Z [61ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  buildVersion = '107.3.3'
+2026-06-11T07:43:48Z [62ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  carboniteFrameworkVersion = '206.6+release.9587.07f17b1b.gl'
+2026-06-11T07:43:48Z [62ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  carboniteSdkVersion = '206.6+release.9587.07f17b1b.gl'
+2026-06-11T07:43:48Z [63ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  commandLine = 'python -c'
+2026-06-11T07:43:48Z [63ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  cpuCoreLimited = '32'
+2026-06-11T07:43:48Z [64ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  cpuId = 'Intel64 Family 6 Model 183 Stepping 1'
+2026-06-11T07:43:48Z [64ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  cpuLogicalCoresBareMetal = '32'
+2026-06-11T07:43:48Z [64ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  cpuName = '13th Gen Intel(R) Core(TM) i9-13900K'
+2026-06-11T07:43:48Z [65ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  cpuPhysicalCoresBareMetal = '24'
+2026-06-11T07:43:48Z [65ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  cpuUsageQuota = '-1.000000'
+2026-06-11T07:43:48Z [66ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  cpuVendor = 'GenuineIntel'
+2026-06-11T07:43:48Z [66ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  desktopOrigin = '(0, 0)'
+2026-06-11T07:43:48Z [67ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  desktopSize = '5120x2880'
+2026-06-11T07:43:48Z [67ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  displayCount = '1'
+2026-06-11T07:43:48Z [68ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  displayRes_0 = '3840x2160x32bit@60Hz'
+2026-06-11T07:43:48Z [68ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  environmentName = 'Individual'
+2026-06-11T07:43:48Z [68ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  experience = 'Isaac Sim'
+2026-06-11T07:43:48Z [69ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  externalBuild = '1'
+2026-06-11T07:43:48Z [69ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  gpuDriver_0 = '595.71'
+2026-06-11T07:43:48Z [70ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  gpuDriver_1 = '0x6402008'
+2026-06-11T07:43:48Z [70ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  gpuVRAM_0 = '25757220864'
+2026-06-11T07:43:48Z [71ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  gpuVRAM_1 = '50315016192'
+2026-06-11T07:43:48Z [71ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  gpu_0 = 'NVIDIA GeForce RTX 4090'
+2026-06-11T07:43:48Z [72ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  gpu_1 = 'Intel(R) Graphics (RPL-S)'
+2026-06-11T07:43:48Z [72ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  kitRendererDriverVersion = '595.71'
+2026-06-11T07:43:48Z [72ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_isaacSim_buildBranch = 'release'
+2026-06-11T07:43:48Z [73ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_isaacSim_buildDate = 'Fri Oct 17 03:55:10 2025 +0000'
+2026-06-11T07:43:48Z [73ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_isaacSim_buildHash = '9c81211'
+2026-06-11T07:43:48Z [74ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_isaacSim_buildRepo = 'https://gitlab-master.nvidia.com/omniverse/isaac/omni_isaac_sim.git'
+2026-06-11T07:43:48Z [74ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_isaacSim_buildVersion = '5.1.0-rc.19'
+2026-06-11T07:43:48Z [75ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_physx_buildBranch = 'HEAD'
+2026-06-11T07:43:48Z [75ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_physx_buildDate = 'Oct-03-2025'
+2026-06-11T07:43:48Z [76ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_physx_buildHash = '3a61992'
+2026-06-11T07:43:48Z [76ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_physx_buildRepo = 'gitlab-master.nvidia.com/omniverse/physics'
+2026-06-11T07:43:48Z [76ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  lib_physx_buildVersion = '107.3.26'
+2026-06-11T07:43:48Z [77ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  memoryStats = '(avail/total) RAM: 51.5308/62.4793GB, Swap: 8/8GB, VM: 1.71799e+10/1.71799e+10GB'
+2026-06-11T07:43:48Z [77ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  nvidia-smi = '
+==============NVSMI LOG==============
+
+Timestamp                                              : Thu Jun 11 15:43:44 2026
+Driver Version                                         : 595.71.05
+CUDA Version                                           : 13.2
+
+Attached GPUs                                          : 1
+GPU 00000000:01:00.0
+    Product Name                                       : NVIDIA GeForce RTX 4090
+    Product Brand                                      : GeForce
+    Product Architecture                               : Ada Lovelace
+    Display Mode                                       : Requested functionality has been deprecated
+    Display Attached                                   : Yes
+    Display Active                                     : Enabled
+    Persistence Mode                                   : Disabled
+    Addressing Mode                                    : None
+    MIG Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    Accounting Mode                                    : Disabled
+    Accounting Mode Buffer Size                        : 4000
+    Driver Model
+        Current                                        : N/A
+        Pending                                        : N/A
+    Serial Number                                      : N/A
+    GPU UUID                                           : GPU-f6dd97ac-57ca-3d3c-e078-d780eaf0e392
+    GPU PDI                                            : 0x1ef0a6052ece543f
+    Minor Number                                       : 0
+    VBIOS Version                                      : 95.02.18.80.CD
+    MultiGPU Board                                     : No
+    Board ID                                           : 0x100
+    Board Part Number                                  : N/A
+    GPU Part Number                                    : 2684-300-A1
+    FRU Part Number                                    : N/A
+    Platform Info
+        Chassis Serial Number                          : N/A
+        Slot Number                                    : N/A
+        Tray Index                                     : N/A
+        Host ID                                        : N/A
+        Peer Type                                      : N/A
+        Module Id                                      : 1
+        GPU Fabric GUID                                : N/A
+    Inforom Version
+        Image Version                                  : G002.0000.00.03
+        OEM Object                                     : 2.0
+        ECC Object                                     : 6.16
+        Power Management Object                        : N/A
+    Inforom BBX Object Flush
+        Latest Timestamp                               : N/A
+        Latest Duration                                : N/A
+    GPU Operation Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    GPU C2C Mode                                       : N/A
+    GPU Virtualization Mode
+        Virtualization Mode                            : None
+        Host VGPU Mode                                 : N/A
+        vGPU Heterogeneous Mode                        : N/A
+    GPU Recovery Action                                : None
+    GSP Firmware Version                               : 595.71.05
+    IBMNPU
+        Relaxed Ordering Mode                          : N/A
+    PCI
+        Bus                                            : 0x01
+        Device                                         : 0x00
+        Domain                                         : 0x0000
+        Base Classcode                                 : 0x3
+        Sub Classcode                                  : 0x0
+        Device Id                                      : 0x268410DE
+        Bus Id                                         : 00000000:01:00.0
+        Sub System Id                                  : 0x8B37103C
+        GPU Link Info
+            PCIe Generation
+                Max                                    : 4
+                Current                                : 1
+                Device Current                         : 1
+                Device Max                             : 4
+                Host Max                               : 5
+            Link Width
+                Max                                    : 16x
+                Current                                : 16x
+        Bridge Chip
+            Type                                       : N/A
+            Firmware                                   : N/A
+        Replays Since Reset                            : 0
+        Replay Number Rollovers                        : 0
+        Tx Throughput                                  : 8593 KB/s
+        Rx Throughput                                  : 31005 KB/s
+        Atomic Caps Outbound                           : N/A
+        Atomic Caps Inbound                            : N/A
+    Fan Speed                                          : 30 %
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 0 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 0 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+    FB Memory Usage
+        Total                                          : 24564 MiB
+        Reserved                                       : 515 MiB
+        Used                                           : 1465 MiB
+        Free                                           : 22585 MiB
+    BAR1 Memory Usage
+        Total                                          : 32768 MiB
+        Used                                           : 1484 MiB
+        Free                                           : 31284 MiB
+    Conf Compute Protected Memory Usage
+        Total                                          : 0 MiB
+        Used                                           : 0 MiB
+        Free                                           : 0 MiB
+    Compute Mode                                       : Default
+    Utilization
+        GPU                                            : 2 %
+        Memory                                         : 12 %
+        Encoder                                        : 0 %
+        Decoder                                        : 0 %
+        JPEG                                           : 0 %
+        OFA                                            : 0 %
+    Encoder Stats
+        Active Sessions                                : 0
+        Average FPS                                    : 0
+        Average Latency                                : 0
+    FBC Stats
+        Active Sessions                                : 0
+        Average FPS                                    : 0
+        Average Latency                                : 0
+    DRAM Encryption Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Current                                        : Disabled
+        Pending                                        : Disabled
+    ECC Errors
+        Volatile
+            SRAM Correctable                           : N/A
+            SRAM Uncorrectable Parity                  : N/A
+            SRAM Uncorrectable SEC-DED                 : N/A
+            DRAM Correctable                           : N/A
+            DRAM Uncorrectable                         : N/A
+        Aggregate
+            SRAM Correctable                           : N/A
+            SRAM Uncorrectable Parity                  : N/A
+            SRAM Uncorrectable SEC-DED                 : N/A
+            DRAM Correctable                           : N/A
+            DRAM Uncorrectable                         : N/A
+            SRAM Threshold Exceeded                    : N/A
+        Aggregate Uncorrectable SRAM Sources
+            SRAM L2                                    : N/A
+            SRAM SM                                    : N/A
+            SRAM Microcontroller                       : N/A
+            SRAM PCIE                                  : N/A
+            SRAM Other                                 : N/A
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+        Unrepairable Memory                            : N/A
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Inactive Correctable Error                     : 0
+        Uncorrectable Error                            : 0
+        Inactive Uncorrectable Error                   : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+        Bank Remap Availability Histogram
+            Max                                        : 192 bank(s)
+            High                                       : 0 bank(s)
+            Partial                                    : 0 bank(s)
+            Low                                        : 0 bank(s)
+            None                                       : 0 bank(s)
+    Temperature
+        GPU Current Temp                               : 35 C
+        GPU T.Limit Temp                               : 49 C
+        GPU Shutdown T.Limit Temp                      : -7 C
+        GPU Slowdown T.Limit Temp                      : -2 C
+        GPU Max Operating T.Limit Temp                 : 0 C
+        GPU Target Temperature                         : 84 C
+        Memory Current Temp                            : N/A
+        Memory Max Operating T.Limit Temp              : N/A
+    GPU Power Readings
+        Average Power Draw                             : 21.25 W
+        Instantaneous Power Draw                       : 20.85 W
+        Current Power Limit                            : 450.00 W
+        Requested Power Limit                          : 450.00 W
+        Default Power Limit                            : 450.00 W
+        Min Power Limit                                : 10.00 W
+        Max Power Limit                                : 450.00 W
+    GPU Memory Power Readings 
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : N/A
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+    Power Smoothing                                    : N/A
+    Workload Power Profiles
+        Requested Profiles                             : N/A
+        Enforced Profiles                              : N/A
+    EDPp Multiplier                                    : N/A
+    Clocks
+        Graphics                                       : 465 MHz
+        SM                                             : 465 MHz
+        Memory                                         : 405 MHz
+        Video                                          : 1185 MHz
+    Applications Clocks
+        Graphics                                       : Requested functionality has been deprecated
+        Memory                                         : Requested functionality has been deprecated
+    Default Applications Clocks
+        Graphics                                       : Requested functionality has been deprecated
+        Memory                                         : Requested functionality has been deprecated
+    Deferred Clocks
+        Memory                                         : N/A
+    Max Clocks
+        Graphics                                       : 3105 MHz
+        SM                                             : 3105 MHz
+        Memory                                         : 10501 MHz
+        Video                                          : 2415 MHz
+    Max Customer Boost Clocks
+        Graphics                                       : N/A
+    Clock Policy
+        Auto Boost                                     : N/A
+        Auto Boost Default                             : N/A
+    Fabric
+        State                                          : N/A
+        Status                                         : N/A
+        CliqueId                                       : N/A
+        ClusterUUID                                    : N/A
+        Health
+            Summary                                    : N/A
+            Bandwidth                                  : N/A
+            Route Recovery in progress                 : N/A
+            Route Unhealthy                            : N/A
+            Access Timeout Recovery                    : N/A
+            Incorrect Configuration                    : N/A
+            Partition Assigned                         : N/A
+    Processes
+        GPU instance ID                   : N/A
+        Compute instance ID               : N/A
+        Process ID                        : 2217
+            Type                          : G
+            Name                          : ............./Xorg
+            Used GPU Memory               : 883 MiB
+        GPU instance ID                   : N/A
+        Compute instance ID               : N/A
+        Process ID                        : 2790
+            Type                          : G
+            Name                          : ......../gnome-shell
+            Used GPU Memory               : 124 MiB
+        GPU instance ID                   : N/A
+        Compute instance ID               : N/A
+        Process ID                        : 3112
+            Type                          : G
+            Name                          : ................./awesun
+            Used GPU Memory               : 47 MiB
+        GPU instance ID                   : N/A
+        Compute instance ID               : N/A
+        Process ID                        : 623491
+            Type                          : G
+            Name                          : ......../nautilus
+            Used GPU Memory               : 34 MiB
+        GPU instance ID                   : N/A
+        Compute instance ID               : N/A
+        Process ID                        : 636621
+            Type                          : G
+            Name                          : ................../chrome
+            Used GPU Memory               : 102 MiB
+        GPU instance ID                   : N/A
+        Compute instance ID               : N/A
+        Process ID                        : 644651
+            Type                          : G
+            Name                          : .............../code
+            Used GPU Memory               : 164 MiB
+    Capabilities
+        EGM                                            : disabled
+
+'
+2026-06-11T07:43:48Z [78ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  osDistro = 'ubuntu'
+2026-06-11T07:43:48Z [78ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  osName = '24.04.2 LTS (Noble Numbat)'
+2026-06-11T07:43:48Z [79ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  osVersion = '24.04.2'
+2026-06-11T07:43:48Z [79ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  portableMode = '1'
+2026-06-11T07:43:48Z [80ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  primaryDisplayRes = '3840x2160x32bit@60Hz'
+2026-06-11T07:43:48Z [80ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  runEnvironment = 'Individual'
+2026-06-11T07:43:48Z [80ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  runningInContainer = '0'
+2026-06-11T07:43:48Z [81ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  shaderdb_debugSymbols = '0'
+2026-06-11T07:43:48Z [81ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  shaderdb_dumpIncludeOverrides = '0'
+2026-06-11T07:43:48Z [82ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  shaderdb_dumpIntermediates = '0'
+2026-06-11T07:43:48Z [82ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  shaderdb_obfuscateCode = '1'
+2026-06-11T07:43:48Z [83ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  shaderdb_optimizationLevel = '1'
+2026-06-11T07:43:48Z [83ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  systemInfo = '
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 595.71.05     | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 4090          | Yes: 0 |     | 24564   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2684      | f6dd97ac.. |
+|     |                                  |        |     |            | 1         |            |
+|---------------------------------------------------------------------------------------------|
+| 1   | Intel(R) Graphics (RPL-S)        |        |     | 47984   MB | 8086      | 0          |
+|     |                                  |        |     |            | a780      | 868080a7.. |
+|     |                                  |        |     |            | 0         |            |
+|=============================================================================================|
+| OS: 24.04.2 LTS (Noble Numbat) ubuntu, Version: 24.04.2, Kernel: 6.17.0-35-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101011 (1.21.1.11)
+| Processor: 13th Gen Intel(R) Core(TM) i9-13900K
+| Cores: 24 | Logical Cores: 32
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 63978 | Free Memory: 54348
+| Total Page/Swap (MB): 8191 | Free Page/Swap: 8191
+|---------------------------------------------------------------------------------------------|
+'
+2026-06-11T07:43:48Z [84ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  telemetrySessionId = '3104119405294240339'
+2026-06-11T07:43:48Z [84ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  terminatedByAbort = '0'
+2026-06-11T07:43:48Z [84ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  totalRamBareMetalMB = '63978'
+2026-06-11T07:43:48Z [85ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  totalRamLimitedMB = '63978'
+2026-06-11T07:43:48Z [85ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  totalSwapBareMetalMB = '8191'
+2026-06-11T07:43:48Z [86ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  totalSwapLimitedMB = '8191'
+2026-06-11T07:43:48Z [86ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  userId = 'default'
+2026-06-11T07:43:48Z [87ms] [Warning] [carb.crashreporter-breakpad.plugin] [crash]  workingDirectory = '/home/<username>/atec/ATEC2026_Simulation_Challenge/.claude/worktrees/task-b-g1-agent-team'
+2026-06-11T07:43:48Z [87ms] [Fatal] [carb.crashreporter-breakpad.plugin] [crash] Thread 835014 backtrace follows:
+2026-06-11T07:43:48Z [179ms] [Fatal] [carb.crashreporter-breakpad.plugin] 000: libc.so.6!__sigaction+0x50 (libc_sigaction.c:?)
+2026-06-11T07:43:48Z [183ms] [Fatal] [carb.crashreporter-breakpad.plugin] 001: librtx.scenedb.plugin.so!void std::vector<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>, std::allocator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> > >::_M_realloc_insert<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> >(__gnu_cxx::__normal_iterator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>*, std::vector<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>, std::allocator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> > > >, std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>&&)+0x123ef (??:?)
+2026-06-11T07:43:48Z [185ms] [Fatal] [carb.crashreporter-breakpad.plugin] 002: librtx.scenedb.plugin.so!void std::vector<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>, std::allocator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> > >::_M_realloc_insert<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> >(__gnu_cxx::__normal_iterator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>*, std::vector<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>, std::allocator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> > > >, std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>&&)+0x12766 (??:?)
+2026-06-11T07:43:48Z [187ms] [Fatal] [carb.crashreporter-breakpad.plugin] 003: librtx.scenedb.plugin.so!void std::vector<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>, std::allocator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> > >::_M_realloc_insert<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> >(__gnu_cxx::__normal_iterator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>*, std::vector<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>, std::allocator<std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int> > > >, std::tuple<char const*, float, float, unsigned int, unsigned int, unsigned int>&&)+0x14a14 (??:?)
+2026-06-11T07:43:48Z [189ms] [Fatal] [carb.crashreporter-breakpad.plugin] 004: librtx.scenedb.plugin.so!carbOnPluginStartup+0x3b4de (??:?)
+2026-06-11T07:43:48Z [192ms] [Fatal] [carb.crashreporter-breakpad.plugin] 005: librtx.scenedb.plugin.so!void std::vector<int, std::allocator<int> >::_M_realloc_insert<int>(__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >, int&&)+0x7ce1 (??:?)
+2026-06-11T07:43:48Z [194ms] [Fatal] [carb.crashreporter-breakpad.plugin] 006: libcarb.scenerenderer-rtx.plugin.so!std::unordered_map<unsigned int, unsigned int, std::hash<unsigned int>, std::equal_to<unsigned int>, std::allocator<std::pair<unsigned int const, unsigned int> > >::~unordered_map()+0x4655f (??:?)
+2026-06-11T07:43:48Z [196ms] [Fatal] [carb.crashreporter-breakpad.plugin] 007: libcarb.scenerenderer-rtx.plugin.so!std::unordered_map<unsigned int, unsigned int, std::hash<unsigned int>, std::equal_to<unsigned int>, std::allocator<std::pair<unsigned int const, unsigned int> > >::~unordered_map()+0x64486 (??:?)
+2026-06-11T07:43:48Z [198ms] [Fatal] [carb.crashreporter-breakpad.plugin] 008: libcarb.scenerenderer-rtx.plugin.so!carbOnPluginShutdown+0xe4b (??:?)
+2026-06-11T07:43:48Z [200ms] [Fatal] [carb.crashreporter-breakpad.plugin] 009: libomni.hydra.rtx.plugin.so!+0x4459
+2026-06-11T07:43:48Z [202ms] [Fatal] [carb.crashreporter-breakpad.plugin] 010: libomni.usd.so!void std::vector<unsigned long, std::allocator<unsigned long> >::_M_realloc_insert<unsigned long>(__gnu_cxx::__normal_iterator<unsigned long*, std::vector<unsigned long, std::allocator<unsigned long> > >, unsigned long&&)+0x10da (??:?)
+2026-06-11T07:43:48Z [205ms] [Fatal] [carb.crashreporter-breakpad.plugin] 011: libomni.usd.so!void std::vector<unsigned long, std::allocator<unsigned long> >::_M_realloc_insert<unsigned long>(__gnu_cxx::__normal_iterator<unsigned long*, std::vector<unsigned long, std::allocator<unsigned long> > >, unsigned long&&)+0x58ce (??:?)
+2026-06-11T07:43:48Z [207ms] [Fatal] [carb.crashreporter-breakpad.plugin] 012: libomni.usd.so!omni::usd::UsdManager::destroyHydraEngine(unsigned int)+0x3b7 (??:?)
+2026-06-11T07:43:48Z [209ms] [Fatal] [carb.crashreporter-breakpad.plugin] 013: libomni.usd.so!void std::vector<unsigned long, std::allocator<unsigned long> >::_M_realloc_insert<unsigned long>(__gnu_cxx::__normal_iterator<unsigned long*, std::vector<unsigned long, std::allocator<unsigned long> > >, unsigned long&&)+0x8807 (??:?)
+2026-06-11T07:43:48Z [212ms] [Fatal] [carb.crashreporter-breakpad.plugin] 014: libomni.usd.so!omni::usd::UsdManager::createHydraEngine(char const*, omni::usd::UsdContext*)+0x85 (??:?)
+2026-06-11T07:43:48Z [214ms] [Fatal] [carb.crashreporter-breakpad.plugin] 015: _usd.cpython-311-x86_64-linux-gnu.so!std::__detail::_Map_base<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*>, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*> >, std::__detail::_Select1st, std::equal_to<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::hash<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<true, false, true>, true>::operator[](std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)+0x15ff4 (??:?)
+2026-06-11T07:43:48Z [217ms] [Fatal] [carb.crashreporter-breakpad.plugin] 016: _usd.cpython-311-x86_64-linux-gnu.so!std::__detail::_Map_base<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*>, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*> >, std::__detail::_Select1st, std::equal_to<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::hash<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<true, false, true>, true>::operator[](std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)+0x9cf2 (??:?)
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [218ms] [Fatal] [carb.crashreporter-breakpad.plugin] 017: python!cfunction_call+0x36
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [219ms] [Fatal] [carb.crashreporter-breakpad.plugin] 018: python!_PyObject_MakeTpCall+0x24b
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [221ms] [Fatal] [carb.crashreporter-breakpad.plugin] 019: python!_PyEval_EvalFrameDefault.cold+0x7c
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [222ms] [Fatal] [carb.crashreporter-breakpad.plugin] 020: python!_PyFunction_Vectorcall+0x165
+2026-06-11T07:43:48Z [226ms] [Fatal] [carb.crashreporter-breakpad.plugin] 021: _eventdispatcher.cpython-311-x86_64-linux-gnu.so!void std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >::_M_realloc_insert<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >(__gnu_cxx::__normal_iterator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)+0xd7a (??:?)
+2026-06-11T07:43:48Z [229ms] [Fatal] [carb.crashreporter-breakpad.plugin] 022: _eventdispatcher.cpython-311-x86_64-linux-gnu.so!std::__detail::_Map_base<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*>, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*> >, std::__detail::_Select1st, std::equal_to<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::hash<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<true, false, true>, true>::operator[](std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)+0xa777 (??:?)
+2026-06-11T07:43:48Z [233ms] [Fatal] [carb.crashreporter-breakpad.plugin] 023: _eventdispatcher.cpython-311-x86_64-linux-gnu.so!std::__detail::_Map_base<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*>, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*> >, std::__detail::_Select1st, std::equal_to<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::hash<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<true, false, true>, true>::operator[](std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)+0xa9d6 (??:?)
+2026-06-11T07:43:48Z [236ms] [Fatal] [carb.crashreporter-breakpad.plugin] 024: libcarb.eventdispatcher.plugin.so!carbOnPluginRegisterEx+0x3441 (??:?)
+2026-06-11T07:43:48Z [238ms] [Fatal] [carb.crashreporter-breakpad.plugin] 025: libomni.usd.so!std::_Function_handler<std::unique_ptr<std::__future_base::_Result_base, std::__future_base::_Result_base::_Deleter> (), std::__future_base::_Task_setter<std::unique_ptr<std::__future_base::_Result<void>, std::__future_base::_Result_base::_Deleter>, std::thread::_Invoker<std::tuple<omni::usd::UsdContext::Impl::spawnLoaderThread<omni::usd::UsdContext::Impl::attachStage(pxrInternal_v0_24__pxrReserved__::TfRefPtr<pxrInternal_v0_24__pxrReserved__::UsdStage>, bool)::{lambda()#1}>(omni::usd::UsdContext::Impl::attachStage(pxrInternal_v0_24__pxrReserved__::TfRefPtr<pxrInternal_v0_24__pxrReserved__::UsdStage>, bool)::{lambda()#1}&&, bool)::{lambda()#1}> >, void> >::_M_invoke(std::_Any_data const&)+0x51d (??:?)
+2026-06-11T07:43:48Z [241ms] [Fatal] [carb.crashreporter-breakpad.plugin] 026: libomni.usd.so!omni::usd::UsdContext::newStage()+0x17c (??:?)
+2026-06-11T07:43:48Z [243ms] [Fatal] [carb.crashreporter-breakpad.plugin] 027: _usd.cpython-311-x86_64-linux-gnu.so!PyInit__usd+0x1a78 (??:?)
+2026-06-11T07:43:48Z [246ms] [Fatal] [carb.crashreporter-breakpad.plugin] 028: _usd.cpython-311-x86_64-linux-gnu.so!std::__detail::_Map_base<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*>, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, void*> >, std::__detail::_Select1st, std::equal_to<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::hash<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<true, false, true>, true>::operator[](std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)+0x9cf2 (??:?)
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [247ms] [Fatal] [carb.crashreporter-breakpad.plugin] 029: python!cfunction_call+0x36
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [248ms] [Fatal] [carb.crashreporter-breakpad.plugin] 030: python!PyObject_Call+0xbe
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [250ms] [Fatal] [carb.crashreporter-breakpad.plugin] 031: python!_PyObject_MakeTpCall+0x24b
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [251ms] [Fatal] [carb.crashreporter-breakpad.plugin] 032: python!_PyEval_EvalFrameDefault.cold+0xcd1
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [252ms] [Fatal] [carb.crashreporter-breakpad.plugin] 033: python!_PyFunction_Vectorcall+0x165
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [253ms] [Fatal] [carb.crashreporter-breakpad.plugin] 034: python!slot_tp_init+0x1f3
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [255ms] [Fatal] [carb.crashreporter-breakpad.plugin] 035: python!_PyObject_MakeTpCall+0x223
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [256ms] [Fatal] [carb.crashreporter-breakpad.plugin] 036: python!_PyEval_EvalFrameDefault.cold+0xcd1
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [257ms] [Fatal] [carb.crashreporter-breakpad.plugin] 037: python!_PyFunction_Vectorcall+0x165
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [258ms] [Fatal] [carb.crashreporter-breakpad.plugin] 038: python!slot_tp_init+0x11c
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [260ms] [Fatal] [carb.crashreporter-breakpad.plugin] 039: python!_PyObject_MakeTpCall+0x223
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [261ms] [Fatal] [carb.crashreporter-breakpad.plugin] 040: python!_PyEval_EvalFrameDefault.cold+0xcd1
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [262ms] [Fatal] [carb.crashreporter-breakpad.plugin] 041: python!_PyEval_Vector+0x145
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [264ms] [Fatal] [carb.crashreporter-breakpad.plugin] 042: python!PyEval_EvalCode+0x9d
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [265ms] [Fatal] [carb.crashreporter-breakpad.plugin] 043: python!run_eval_code_obj+0x4a
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [266ms] [Fatal] [carb.crashreporter-breakpad.plugin] 044: python!run_mod+0x63
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [267ms] [Fatal] [carb.crashreporter-breakpad.plugin] 045: python!PyRun_StringFlags+0x62
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [269ms] [Fatal] [carb.crashreporter-breakpad.plugin] 046: python!PyRun_SimpleStringFlags+0x3c
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [270ms] [Fatal] [carb.crashreporter-breakpad.plugin] 047: python!Py_RunMain+0x30f
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [271ms] [Fatal] [carb.crashreporter-breakpad.plugin] 048: python!Py_BytesMain+0x37
+2026-06-11T07:43:48Z [300ms] [Fatal] [carb.crashreporter-breakpad.plugin] 049: libc.so.6!__libc_init_first+0x8a (./csu/../sysdeps/x86/libc-start.c:74)
+2026-06-11T07:43:48Z [329ms] [Fatal] [carb.crashreporter-breakpad.plugin] 050: libc.so.6!__libc_start_main+0x8b (./csu/../csu/libc-start.c:128)
+/usr/bin/addr2line: python：无此文件
+2026-06-11T07:43:48Z [331ms] [Fatal] [carb.crashreporter-breakpad.plugin] 051: python!_start+0x2e
+timeout: 被监视的命令已核心转储

@@ -1,4 +1,4 @@
-"""Evaluate the WBC Task B G1 solution (demo.solution_task_b_g1_wbc) + record multi-view video.
+"""Evaluate the WBC Task B G1 solution (demo.solution, unified pipeline) + record multi-view video.
 
 Runs a full episode, prints score / phase / touched tracks, and saves a
 3rd-person(follow) + head-cam + right-hand-cam video.
@@ -37,7 +37,7 @@ import gymnasium as gym  # noqa: E402
 import atec_rl_lab.tasks  # noqa: F401,E402
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent  # noqa: E402
 from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
-from demo.solution_task_b_g1_wbc import AlgSolution  # noqa: E402
+from demo.solution import AlgSolution  # noqa: E402  (refactored unified pipeline)
 
 _VIDEO = not args_cli.no_video
 if _VIDEO:
@@ -97,7 +97,10 @@ def main():
             total += (r / sd) if sd else 0.0
 
             phase = getattr(sol.planner, "phase", "?")
-            touched = sorted(getattr(sol.planner, "touched_track_ids", set()))
+            # New unified planner exposes `scored`; keep `touched_track_ids` as a
+            # fallback for the legacy planner.
+            touched = sorted(getattr(sol.planner, "scored",
+                                     getattr(sol.planner, "touched_track_ids", set())))
             if phase != last_phase or step % 100 == 0:
                 bz = float(robot.data.root_pos_w[0, 2])
                 print(f"[wbc-eval] t={step*0.02:5.1f}s phase={phase:12s} score={total:.2f} touched={touched} base_z={bz:.2f}", flush=True)
@@ -131,7 +134,7 @@ def main():
     finally:
         if writer is not None:
             writer.close()
-        print(f"score: {total:.2f}  touched={sorted(getattr(sol.planner,'touched_track_ids',set()))}", flush=True)
+        print(f"score: {total:.2f}  touched={sorted(getattr(sol.planner,'scored',getattr(sol.planner,'touched_track_ids',set())))}", flush=True)
         if _VIDEO:
             print(f"[wbc-eval] video: {os.path.abspath(args_cli.out)}", flush=True)
         env.close()

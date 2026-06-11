@@ -160,6 +160,20 @@ class CreepTest(unittest.TestCase):
         cmd = plr.step(pose, [], 0.0)
         self.assertEqual(cmd.phase, "squat_sweep")
 
+    def test_creep_aims_at_target(self):
+        plr = TaskBPlanner()
+        # Target within ARRIVE_DIST but offset to the robot's LEFT (yaw 0, +y is left).
+        target = (-9.85, -9.75)  # dist ~0.29 < ARRIVE_DIST, bearing > 0
+        pose = Pose2D(-10.0, -10.0, 0.0)
+        plr.step(pose, [det(1, *target, pose)], 0.0)  # arrive -> creep
+        cmd = plr.step(pose, [], 0.0)
+        self.assertEqual(cmd.phase, "creep")
+        self.assertAlmostEqual(cmd.vel[0], P.CREEP_VEL)
+        # bearing to a left-offset target is positive -> wz aims left (> 0).
+        self.assertGreater(cmd.vel[2], 0.0)
+        self.assertIsNone(cmd.fingers)
+        self.assertEqual(cmd.waist_rpy, (0.0, 0.0, 0.0))
+
 
 class SquatSweepTest(unittest.TestCase):
     def _enter_squat(self, plr, target, pose):
@@ -198,6 +212,37 @@ class SquatSweepTest(unittest.TestCase):
             self.assertLessEqual(ry, P.RIGHT_LAT_MAX + 1e-9)
             cmd = plr.step(pose, [], 0.0)
         self.assertGreaterEqual(checked, P.SQUAT_SWEEP_MAX_STEPS - 1)
+
+    def test_both_hands_sweep_property_extreme_targets(self):
+        """_both_hands_sweep keeps every coordinate inside the valid ranges and the
+        quats fixed at identity, for 300 consecutive t values across extreme target
+        geometries (far left/right/behind/ahead in the base frame)."""
+        plr = TaskBPlanner()
+        pose = Pose2D(-10.0, -10.0, 0.0)
+        extremes = [
+            (-10.0, -2.0),   # far to the robot's left (large +lat)
+            (-10.0, -18.0),  # far to the robot's right (large -lat)
+            (-18.0, -10.0),  # behind the robot (negative forward)
+            (-2.0, -10.0),   # far ahead (large +forward)
+            (-8.0, -10.0),   # dead ahead, modest
+        ]
+        for target in extremes:
+            for t in range(1, 301):
+                left, right = plr._both_hands_sweep(pose, target, t)
+                lx, ly, lz = left[0], left[1], left[2]
+                rx, ry, rz = right[0], right[1], right[2]
+                self.assertGreaterEqual(lx, P.REACH_FWD_MIN - 1e-9, target)
+                self.assertLessEqual(lx, P.REACH_FWD_MAX + 1e-9, target)
+                self.assertGreaterEqual(rx, P.REACH_FWD_MIN - 1e-9, target)
+                self.assertLessEqual(rx, P.REACH_FWD_MAX + 1e-9, target)
+                self.assertGreaterEqual(ly, P.LEFT_LAT_MIN - 1e-9, target)
+                self.assertLessEqual(ly, P.LEFT_LAT_MAX + 1e-9, target)
+                self.assertGreaterEqual(ry, P.RIGHT_LAT_MIN - 1e-9, target)
+                self.assertLessEqual(ry, P.RIGHT_LAT_MAX + 1e-9, target)
+                self.assertAlmostEqual(lz, P.HAND_Z)
+                self.assertAlmostEqual(rz, P.HAND_Z)
+                self.assertEqual(left[3:], (1.0, 0.0, 0.0, 0.0))
+                self.assertEqual(right[3:], (1.0, 0.0, 0.0, 0.0))
 
     def test_squat_sweep_straddle(self):
         plr = TaskBPlanner()
@@ -304,15 +349,34 @@ class RecoverTest(unittest.TestCase):
         cmd = plr.step(pose, [], 0.0, posture="recover")
         self.assertEqual(cmd.phase, "stand_up")
 
+    def test_recover_during_creep(self):
+        plr = TaskBPlanner()
+        target = (-8.0, -10.0)
+        pose = Pose2D(-8.3, -10.0, 0.0)  # within ARRIVE_DIST -> approach->creep
+        plr.step(pose, [det(1, *target, pose)], 0.0)  # arrive -> creep
+        cmd = plr.step(pose, [], 0.0)
+        self.assertEqual(cmd.phase, "creep")  # genuinely in creep between steps
+        cmd = plr.step(pose, [], 0.0, posture="recover")
+        self.assertEqual(cmd.phase, "stand_up")
+        # Entry was NOT from a squat, so the ramp holds near STAND_HEIGHT (0.75),
+        # not the floor squat height.
+        self.assertAlmostEqual(cmd.base_height, P.STAND_HEIGHT, delta=1e-6)
+
     def test_recover_during_squat(self):
         plr = TaskBPlanner()
         target = (-8.0, -10.0)
-        pose = Pose2D(-10.0, -10.0, 0.0)
-        plr.step(pose, [det(1, *target, pose)], 0.0)
+        pose = Pose2D(-8.3, -10.0, 0.0)  # within ARRIVE_DIST so we actually reach squat
+        plr.step(pose, [det(1, *target, pose)], 0.0)  # arrive -> creep
+        cmd = None
         for _ in range(P.CREEP_STEPS + 1):
-            plr.step(pose, [], 0.0)
+            cmd = plr.step(pose, [], 0.0)
+        self.assertEqual(cmd.phase, "squat_sweep")  # confirm we are genuinely squatting
         cmd = plr.step(pose, [], 0.0, posture="recover")
         self.assertEqual(cmd.phase, "stand_up")
+        # Ramp must START at SQUAT_HEIGHT (0.30) + one increment, NOT jump to 0.75.
+        first_inc = P.SQUAT_HEIGHT + (P.STAND_HEIGHT - P.SQUAT_HEIGHT) / P.STAND_RAMP_STEPS
+        self.assertAlmostEqual(cmd.base_height, first_inc, delta=1e-6)
+        self.assertLess(cmd.base_height, 0.35)  # nowhere near standing
 
     def test_recover_during_stand_up_stays(self):
         plr = TaskBPlanner()
@@ -357,13 +421,25 @@ class WBCCommandDefaultsTest(unittest.TestCase):
         # near to creep
         near = Pose2D(target[0] - 0.3, target[1], 0.0)
         c = plr.step(near, [], 0.0)
+        seen_phases.add(c.phase)
+        self.assertEqual(c.phase, "creep")
+        self.assertIsNone(c.fingers)
+        self.assertEqual(c.waist_rpy, (0.0, 0.0, 0.0))
         # squat
         for _ in range(P.CREEP_STEPS + 1):
             c = plr.step(near, [], 0.0)
         seen_phases.add(c.phase)
         self.assertIsNone(c.fingers)
         self.assertEqual(c.waist_rpy, (0.0, 0.0, 0.0))
+        # stand_up (score during squat -> stand_up)
+        c = plr.step(near, [], 1.0)
+        seen_phases.add(c.phase)
+        self.assertEqual(c.phase, "stand_up")
+        self.assertIsNone(c.fingers)
+        self.assertEqual(c.waist_rpy, (0.0, 0.0, 0.0))
         self.assertIn("squat_sweep", seen_phases)
+        self.assertIn("creep", seen_phases)
+        self.assertIn("stand_up", seen_phases)
 
 
 class ResetTest(unittest.TestCase):

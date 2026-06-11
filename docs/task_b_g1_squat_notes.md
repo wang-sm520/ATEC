@@ -226,6 +226,33 @@ squat_sweep 阶段:先 `CREEP_STEPS=30` 步以 0.22m/s 朝物体蹭近(站立)�
 - **提速**:approach 速度命令 ×1.9(钳到 vx 0.6 / vy 0.4 / wz 1.6),creep 0.22→0.35。
 - 整圈循环:旋转找物体→接近→蹭近→蹲0.3→双手平扫→起身→(_search_step 复位)重新旋转找下一个,直到超时。
 
+## 2026-06-11 Refactor validation, hardened short-run (driver 580, 165s cap)
+
+**Verdict: BLOCKED — the `atec` conda env is empty; no Isaac run could be launched. The *previous* RTX-595 SIGSEGV blocker is, however, very likely already resolved by the driver-580 rollback.**
+
+No GPU compute ever ran today. The single probe launch died in <1s on a pure Python `ImportError` (`No module named 'isaaclab'`), before `AppLauncher` touched the GPU. GPU stayed idle throughout (42°C, 15 MiB used, ~9% util on every check; no zombie procs). The 165s timeout cap was never stressed.
+
+### New blocker: the `atec` conda env has been wiped to a bare Python 3.11 shell
+CLAUDE.md describes `atec` as "torch 2.7.1 + CUDA 12.8 + onnxruntime + IsaacLab, Python 3.12." What actually exists now:
+- `~/miniconda3/envs/atec` is **Python 3.11.15** (not 3.12), created by `conda create -n atec python=3.11` (per `conda-meta/history`), with **only 11 packages** (pip/setuptools/wheel). `import torch`, `import isaaclab`, `import numpy`, `import onnxruntime` all fail.
+- This is almost certainly collateral from the prior crash/repo-repair: the env was recreated empty and never re-provisioned (`pip install -e source/atec_rl_lab` + IsaacLab/torch never re-run).
+- Other envs that *do* have IsaacLab (`amp`, `unitree_rl_lab`) point at **other projects' IsaacLab trees** and cannot `import atec_rl_lab` (the ATEC task package isn't installed there, and they'd need ATEC's specific Isaac build anyway). So there is no usable fallback env on the machine.
+
+Reprovisioning `atec` (multi-GB torch + IsaacLab install + editable task package) is a heavy, sustained-load operation and an environment decision outside the "validation + small ratified tuning" mandate — left for the user. Probe + evals can run unchanged once `atec` is restored.
+
+### The earlier RTX SIGSEGV blocker is most likely gone (driver rollback landed)
+The previous entry below recorded the camera SIGSEGV happening on **driver 595.71.05** — the exact bad driver flagged in memory (`isaac-driver-595-incompatible`, "595 segfaults Isaac cameras; need driver 580 + apt-mark hold"). The machine is **now on driver 580.159.03** (NVRM 580.159.03, kernel module confirmed). So the root cause of the prior `librtx.scenedb.plugin.so` crash has been addressed at the driver level. It could not be re-verified today only because the `atec` env can't import Isaac at all — once the env is restored, the `--enable_cameras` path should be re-tested first.
+
+### What WAS verified today (no GPU needed)
+- Worktree created from `worktree-task-b-g1-agent-team` at `930fc48` (one commit past the `2d2e825` the brief named — superset, adds video-script tracking).
+- Planner FSM logic green: `python -m unittest tests.task_b.test_task_b_planner` → **26 tests OK** (in a numpy-less bare shell, so this is pure-Python planner logic only). The 3 module-level numpy `ImportError`s in the full `tests/task_b` discover are the same env gap, not refactor regressions.
+- Harness scripts confirmed to drive the refactored `demo.solution.AlgSolution`; eval has `--no_video` (score-only) and `--seconds`; probe writes `outputs/<out>/squat_geometry.json` with per-step nearest hand-object 3D distance + hand z + phase.
+
+### Numbers
+Squat-phase min hand-object distance: **UNAVAILABLE** (no run). Per-run scores / falls / score-per-sim-minute: **UNAVAILABLE** (no run). Old baseline remains 0.56m, 0–1 pts. No tuning applied (HARD-LIMIT knobs untouched; would be premature without a single measured run).
+
+---
+
 ## 2026-06-11 Refactor validation (unified planner + blind-walk arrival)
 
 **Verdict: BLOCKED — environment-level RTX renderer crash, no validation runs could execute.**

@@ -336,3 +336,37 @@ user-consult item — NOT self-tuned.
 3. Raise CONFIDENCE_FLOOR / min blob size to filter misprojected specks.
 4. Cap squat attempts per region + periodic re-search to escape the 2.75m bubble.
 None touch SQUAT_HEIGHT/HAND_Z/REACH/LAT/sweep periods/STOW/mini_wbc/perception projection.
+
+## 2026-06-12 Optimization iteration 1 — valid-sighting-band gating (KEEP)
+
+Change (commit aa85056): `demo/task_b_planner.py` gates target selection, memory
+writes, and active-target refresh to a physically-trustworthy sighting band.
+`TARGET_MIN_DIST=0.60` (head cam ground-blind below ~0.62m), `TARGET_MAX_DIST=3.0`
+(projection unreliable beyond), `REFRESH_MIN_DIST=0.50`. Applied in `_select_target`
+(fresh), the memory write (step 2), and `_refresh_active`. BLIND_WALK_STEPS, the
+arrival gate, and all squat/sweep behavior UNCHANGED — the legit see>=0.6m -> approach
+-> blind-walk -> arrive -> creep -> squat flow is preserved. 5 new SightingBandTest
+cases; existing fixtures reseeded via an in-band sighting (`seed_active` helper).
+32 planner+staging tests green; staging re-synced.
+
+Privileged diag A/B (scripts/diag_task_b_g1_approach.py, 76 sim-s):
+| metric | BEFORE | AFTER |
+|---|---|---|
+| empty-floor squats (base >1m from any object) | 55% | 0% |
+| reachable squats (base <=0.6m) | 43% | 97% |
+| squat nearest-TRUE-object, median | 1.27m | 0.12m |
+| search steps | 0 | 1061 |
+| total true path length | ~2.75m | 18.06m |
+| squat cycles | ~120 (thrash) | 15 (deliberate) |
+| detection rate | 26% | 40% |
+| fell | yes | no |
+
+Scored evals (76 sim-s each, no_video): **2.0 / 3.0 / 1.0**, mean 2.0 per 76s =
+**1.58 points/sim-minute**, **0 falls** (min base_z ~0.36 across all). Old baseline
+4/0/0 over 3×300s = 0.27 pts/sim-min with 2/4 falls. => **~5.9x score-per-sim-minute,
+falls eliminated (0/4 vs 2/4)**. Extrapolates to ~8 points per 300 sim-s.
+Verdict: KEEP. Residual variance remains (run3=1) — some layouts spread objects far
+from spawn so a 76s window catches fewer; a longer episode (real 20-min) amortizes this.
+
+Throughput note: short eval = ~76 sim-s in ~4-5 min wall (incl. ~90s startup), fits
+the 5-min budget.

@@ -42,16 +42,6 @@ def det(track_id, wx, wy, pose, confidence=1.0):
     )
 
 
-def run_until(plr, pose, get_dets, score, max_steps, predicate):
-    """Step the planner until predicate(cmd) is True; return (cmd, steps)."""
-    cmd = None
-    for i in range(max_steps):
-        cmd = plr.step(pose, get_dets(i), score, posture="ok")
-        if predicate(cmd):
-            return cmd, i
-    return cmd, max_steps
-
-
 class SearchPhaseTest(unittest.TestCase):
     def test_search_rotate_then_relocate_cycle(self):
         plr = TaskBPlanner()
@@ -257,19 +247,19 @@ class SquatSweepTest(unittest.TestCase):
         self.assertAlmostEqual(cmd.left_hand[1], P.HAND_SPREAD, delta=1e-6)
         self.assertAlmostEqual(cmd.right_hand[1], -P.HAND_SPREAD, delta=1e-6)
 
-    def test_score_during_squat_marks_touched(self):
+    def test_score_during_squat_marks_scored(self):
         plr = TaskBPlanner()
         target = (-8.0, -10.0)
         pose = Pose2D(-8.3, -10.0, 0.0)
         self._enter_squat(plr, target, pose)
         cmd = plr.step(pose, [], 1.0)  # score jumped
         self.assertEqual(cmd.phase, "stand_up")
-        # Touched object never re-selected, even from a fresh detection.
-        # Finish stand_up.
+        self.assertIn(1, plr.scored)
+        # Scored object never re-selected, even from a fresh detection.
         for _ in range(P.STAND_RAMP_STEPS + 1):
             cmd = plr.step(pose, [det(1, *target, pose)], 1.0)
         self.assertNotEqual(cmd.target_world, target)
-        self.assertIn(cmd.phase, ("search",))
+        self.assertEqual(cmd.phase, "search")
 
     def test_sweep_timeout_to_stand_up(self):
         plr = TaskBPlanner()
@@ -302,7 +292,7 @@ class StandUpTest(unittest.TestCase):
         for a, b in zip(heights, heights[1:]):
             self.assertGreaterEqual(b + 1e-9, a)
         self.assertAlmostEqual(cmd.base_height, P.STAND_HEIGHT, delta=1e-6)
-        self.assertEqual(cmd.phase, "search")  # touched object only -> search
+        self.assertEqual(cmd.phase, "search")  # scored object only -> search
 
     def test_stand_then_approach_remembered(self):
         plr = TaskBPlanner()
@@ -338,6 +328,41 @@ class MaxAttemptsTest(unittest.TestCase):
         # Now exhausted: a fresh detection must not be selected.
         cmd = plr.step(pose, [det(1, *target, pose)], 0.0)
         self.assertEqual(cmd.phase, "search")
+
+
+class ScoreDuringPursuitTest(unittest.TestCase):
+    def test_score_during_approach_claims_object(self):
+        plr = TaskBPlanner()
+        target = (-8.0, -10.0)
+        pose = Pose2D(-10.0, -10.0, 0.0)  # 2m away: genuinely mid-approach, not arrived
+        cmd = plr.step(pose, [det(1, *target, pose)], 0.0)
+        self.assertEqual(cmd.phase, "approach")
+        # Robot kicks/early-touches the object while still walking up: score jumps.
+        cmd = plr.step(pose, [], 1.0)
+        self.assertEqual(cmd.phase, "stand_up")
+        self.assertIn(1, plr.scored)
+        # Entry was not from a squat, so the ramp holds near STAND_HEIGHT.
+        self.assertAlmostEqual(cmd.base_height, P.STAND_HEIGHT, delta=1e-6)
+        # Finish stand_up: scored object is never re-selected (detection nor memory).
+        for _ in range(P.STAND_RAMP_STEPS + 1):
+            cmd = plr.step(pose, [det(1, *target, pose)], 1.0)
+        self.assertEqual(cmd.phase, "search")
+        self.assertNotEqual(cmd.target_world, target)
+
+    def test_score_on_arrival_transition_step_not_lost(self):
+        plr = TaskBPlanner()
+        target = (-8.0, -10.0)
+        pose = Pose2D(-8.3, -10.0, 0.0)  # within ARRIVE_DIST: this step hands off
+        # The first step both selects+arrives (approach -> creep handoff) AND carries
+        # a score increase. The delta must not be dropped on the transition: the
+        # approach-level score check claims the object before reaching creep.
+        cmd = plr.step(pose, [det(1, *target, pose)], 1.0)
+        self.assertEqual(cmd.phase, "stand_up")
+        self.assertIn(1, plr.scored)
+        # And the claimed object is never re-selected afterward.
+        for _ in range(P.STAND_RAMP_STEPS + 1):
+            cmd = plr.step(pose, [det(1, *target, pose)], 1.0)
+        self.assertNotEqual(cmd.target_world, target)
 
 
 class RecoverTest(unittest.TestCase):
@@ -452,7 +477,7 @@ class ResetTest(unittest.TestCase):
         plr.reset()
         self.assertEqual(plr.memory, {})
         self.assertEqual(plr.attempts, {})
-        self.assertEqual(plr.touched, set())
+        self.assertEqual(plr.scored, set())
         cmd = plr.step(pose, [], 0.0)
         self.assertEqual(cmd.phase, "search")
 

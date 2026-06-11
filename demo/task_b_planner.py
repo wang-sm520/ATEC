@@ -71,7 +71,7 @@ class WBCCommand:
     waist_rpy: tuple[float, float, float]           # always (0.0, 0.0, 0.0) for now
     left_hand: tuple[float, float, float, float, float, float, float]   # xyz + wxyz quat
     right_hand: tuple[float, float, float, float, float, float, float]
-    fingers: tuple[float, float, float, float] | None = None  # None = hold defaults
+    fingers: tuple[float, float, float, float] | None = None  # None = hold defaults; reserved for Phase-2 grasping, wired into MiniWBC in Task 3
     phase: str = ""                                 # for logging/tests
     target_world: tuple[float, float] | None = None # for logging/tests
 
@@ -87,7 +87,9 @@ class TaskBPlanner:
         self.active: tuple[int, float, float] | None = None
         self.memory: dict[int, tuple[float, float]] = {}
         self.attempts: dict[int, int] = {}
-        self.touched: set[int] = set()
+        # Objects that produced a score increase while we were pursuing them.
+        # ("scored", not "touched": Phase 2 adds real touch/grasp semantics.)
+        self.scored: set[int] = set()
         # Per-phase counters.
         self.search_step = 0
         self.steps_since_seen = 0
@@ -98,7 +100,7 @@ class TaskBPlanner:
 
     # ------------------------------------------------------------------ helpers
     def _exhausted(self, track_id: int) -> bool:
-        return track_id in self.touched or self.attempts.get(track_id, 0) >= MAX_ATTEMPTS
+        return track_id in self.scored or self.attempts.get(track_id, 0) >= MAX_ATTEMPTS
 
     def _charge_attempt(self, track_id: int) -> None:
         self.attempts[track_id] = self.attempts.get(track_id, 0) + 1
@@ -126,7 +128,7 @@ class TaskBPlanner:
         self.phase = "approach"
         self.steps_since_seen = 0
 
-    def _stow_command(self, vel, height, phase) -> WBCCommand:
+    def _stow_command(self, vel: tuple[float, float, float], height: float, phase: str) -> WBCCommand:
         tw = None if self.active is None else (self.active[1], self.active[2])
         return WBCCommand(
             vel=vel,
@@ -202,7 +204,9 @@ class TaskBPlanner:
     # ------------------------------------------------------------------- driver
     def step(self, pose: Pose2D, detections: list[Detection], current_score: float,
              posture: str = "ok") -> WBCCommand:
-        # 1. score bookkeeping
+        # 1. score bookkeeping. Any score increase while pursuing a target claims
+        # that target (in approach, creep, or squat): the delta is the only signal
+        # the object was contacted, so it must not be dropped on the way through.
         score_delta = float(current_score) - self.prev_score
         self.prev_score = float(current_score)
 
@@ -219,18 +223,21 @@ class TaskBPlanner:
             self._begin_stand_up(from_squat=(self.phase == "squat_sweep"))
 
         if self.phase == "search":
-            return self._step_search(pose, detections)
+            return self._step_search(pose, detections, score_delta)
         if self.phase == "approach":
-            return self._step_approach(pose, detections)
+            return self._step_approach(pose, detections, score_delta)
         if self.phase == "creep":
             return self._step_creep(pose, score_delta)
         if self.phase == "squat_sweep":
             return self._step_squat(pose, score_delta)
         if self.phase == "stand_up":
             return self._step_stand(pose)
-        # Defensive fallback.
+        # Defensive guard: an unknown phase is not a legal transition. Clear the
+        # stale active target (so its target_world cannot leak into the emitted
+        # command) and recover into search.
         self.phase = "search"
-        return self._step_search(pose, detections)
+        self.active = None
+        return self._step_search(pose, detections, score_delta)
 
     def _refresh_active(self, detections: list[Detection]) -> bool:
         """If a detection matches the active track_id, refresh coords + reset the
@@ -246,42 +253,45 @@ class TaskBPlanner:
         return False
 
     # ------------------------------------------------------------- phase bodies
-    def _step_search(self, pose: Pose2D, detections: list[Detection]) -> WBCCommand:
+    def _step_search(self, pose: Pose2D, detections: list[Detection], score_delta: float) -> WBCCommand:
         target = self._select_target(pose, detections)
         if target is not None:
             self.search_step = 0
             self._enter_approach(target)
-            return self._step_approach(pose, detections)
+            return self._step_approach(pose, detections, score_delta)
         vel = self._search_velocity(self.search_step)
         self.search_step += 1
         return self._stow_command(vel, STAND_HEIGHT, "search")
 
-    def _step_approach(self, pose: Pose2D, detections: list[Detection]) -> WBCCommand:
+    def _step_approach(self, pose: Pose2D, detections: list[Detection], score_delta: float) -> WBCCommand:
         assert self.active is not None
+        # Score gained while still approaching means the robot kicked/early-touched
+        # the object -> claim it and stand up (entry was not from a squat).
+        if score_delta > 0.0:
+            self.scored.add(self.active[0])
+            self._begin_stand_up(from_squat=False)
+            return self._step_stand(pose)
         if not self._refresh_active(detections):
             self.steps_since_seen += 1
             if self.steps_since_seen > BLIND_WALK_STEPS:
                 self._charge_attempt(self.active[0])
                 self.active = None
                 self.phase = "search"
-                return self._step_search(pose, detections)
+                return self._step_search(pose, detections, score_delta)
         tid, wx, wy = self.active
         target_xy = (wx, wy)
         if pose.distance_to(target_xy) <= ARRIVE_DIST:
             self._charge_attempt(tid)
             self.phase = "creep"
             self.creep_step = 0
-            return self._step_creep(pose, 0.0)
-        bearing = pose.bearing_to(target_xy)
-        sx = wx - APPROACH_STANDOFF * math.cos(bearing)
-        sy = wy - APPROACH_STANDOFF * math.sin(bearing)
-        vel = self._scaled_approach_velocity(self._drive_to(pose, sx, sy, bearing, 0.28))
+            return self._step_creep(pose, score_delta)
+        vel = self._approach_velocity(pose, self.active)
         return self._stow_command(vel, STAND_HEIGHT, "approach")
 
     def _step_creep(self, pose: Pose2D, score_delta: float) -> WBCCommand:
         assert self.active is not None
         if score_delta > 0.0:
-            self.touched.add(self.active[0])
+            self.scored.add(self.active[0])
             self._begin_stand_up(from_squat=False)
             return self._step_stand(pose)
         self.creep_step += 1
@@ -289,14 +299,14 @@ class TaskBPlanner:
         if self.creep_step > CREEP_STEPS:
             self.phase = "squat_sweep"
             self.sweep_step = 0
-            return self._step_squat(pose, 0.0)
+            return self._step_squat(pose, score_delta)
         vel = self._creep_velocity(pose, target_xy)
         return self._stow_command(vel, STAND_HEIGHT, "creep")
 
     def _step_squat(self, pose: Pose2D, score_delta: float) -> WBCCommand:
         assert self.active is not None
         if score_delta > 0.0:
-            self.touched.add(self.active[0])
+            self.scored.add(self.active[0])
             self._begin_stand_up(from_squat=True)
             return self._step_stand(pose)
         self.sweep_step += 1

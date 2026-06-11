@@ -77,7 +77,8 @@ class MiniWBC:
         self.last_action = np.zeros(29, dtype=np.float32)
         self.ik_output = None
 
-    def act(self, proprio_row, vel_cmd, base_height, waist_rpy, left_hand, right_hand, waist_weight=1.0):
+    def act(self, proprio_row, vel_cmd, base_height, waist_rpy, left_hand, right_hand,
+            waist_weight=1.0, fingers=None):
         row = proprio_row
         if hasattr(row, "detach"):
             row = row.detach().cpu().numpy()
@@ -113,4 +114,6 @@ class MiniWBC:
         atec_action_body = (target_q - DEFAULT_ANGLES_ATEC) / ATEC_ACTION_SCALE
         action_33 = np.zeros(33, dtype=np.float32)
         action_33[:29] = atec_action_body
+        if fingers is not None:
+            action_33[29:33] = np.asarray(fingers, dtype=np.float32)
         return action_33.tolist()

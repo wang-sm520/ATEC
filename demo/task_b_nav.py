@@ -24,6 +24,14 @@ def _as_float(value: Any) -> float:
     return float(value.item()) if hasattr(value, "item") else float(value)
 
 
+# World-frame centre of the Task B target/drop circle, radius 1.0m.
+TARGET_CENTER = (-3.0, -10.0)
+
+
+def _near_target_circle(xy: tuple[float, float], max_distance: float) -> bool:
+    return math.hypot(xy[0] - TARGET_CENTER[0], xy[1] - TARGET_CENTER[1]) <= max_distance
+
+
 @dataclass(frozen=True)
 class Pose2D:
     x: float

@@ -11,21 +11,14 @@ import math
 from dataclasses import dataclass
 
 try:
-    from task_b_nav import Pose2D, _clamp
+    from task_b_nav import Pose2D, _clamp, _near_target_circle
 except ImportError:  # pragma: no cover - local dev path
-    from demo.task_b_nav import Pose2D, _clamp
+    from demo.task_b_nav import Pose2D, _clamp, _near_target_circle
 
 try:
     import torch
 except ModuleNotFoundError:  # pragma: no cover - the eval image provides torch.
     torch = None
-
-
-TARGET_CENTER = (-3.0, -10.0)
-
-
-def _near_target_circle(xy, max_distance):
-    return math.hypot(xy[0] - TARGET_CENTER[0], xy[1] - TARGET_CENTER[1]) <= max_distance
 
 
 @dataclass(frozen=True)

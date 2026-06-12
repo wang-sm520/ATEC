@@ -11,12 +11,16 @@ import importlib.util
 import math
 import unittest
 
-import numpy as np
+try:
+    import numpy as np
+    import demo.solution as solution  # imports mini_wbc, which needs numpy
+    from demo.task_b_planner import TaskBPlanner
+except ModuleNotFoundError:  # pragma: no cover - bare shells may lack numpy
+    np = None
+    solution = None
+    TaskBPlanner = None
 
-import demo.solution as solution
-from demo.task_b_planner import TaskBPlanner
-
-_HAVE_ORT = importlib.util.find_spec("onnxruntime") is not None
+_HAVE_ORT = np is not None and importlib.util.find_spec("onnxruntime") is not None
 
 
 def _zero_proprio_obs():
@@ -60,6 +64,7 @@ class _CountingPerception:
         return []
 
 
+@unittest.skipIf(np is None, "numpy not available")
 class SolutionWiringTest(unittest.TestCase):
     def setUp(self):
         orig_wbc = solution.MiniWBC

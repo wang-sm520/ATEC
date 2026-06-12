@@ -3,11 +3,14 @@
 import importlib.util
 import unittest
 
-import numpy as np
+try:
+    import numpy as np
+except ModuleNotFoundError:  # pragma: no cover - bare shells may lack numpy
+    np = None
 
 from demo.task_b_planner import STOW_LEFT_HAND, STOW_RIGHT_HAND
 
-_HAVE_ORT = importlib.util.find_spec("onnxruntime") is not None
+_HAVE_ORT = np is not None and importlib.util.find_spec("onnxruntime") is not None
 if _HAVE_ORT:
     from demo.mini_wbc import MiniWBC, DEFAULT_LEFT_HAND, DEFAULT_RIGHT_HAND
 

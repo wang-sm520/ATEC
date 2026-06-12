@@ -1,6 +1,6 @@
 """Task B G1 navigation primitives: pose, dead-reckoning odometry, posture guard.
 
-Ported verbatim from solution_task_b_g1.py. Stdlib-only (math/dataclasses/typing);
+Ported verbatim from the legacy task-b module (retired 2026-06-12). Stdlib-only (math/dataclasses/typing);
 PostureGuard duck-types torch/numpy/list inputs and does NOT import torch.
 """
 

@@ -1,6 +1,6 @@
 """Task B G1 RGB-D perception: colored-object detection with ground projection.
 
-Ported verbatim from solution_task_b_g1.py. The camera intrinsics/extrinsics and
+Ported verbatim from the legacy task-b module (retired 2026-06-12). The camera intrinsics/extrinsics and
 the pinhole back-projection through the measured 47.6° head-camera pitch are
 calibrated in simulation — do not alter any constant or math expression.
 """

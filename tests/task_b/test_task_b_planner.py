@@ -77,6 +77,19 @@ class SearchPhaseTest(unittest.TestCase):
         cmd = plr.step(pose, [], 0.0)
         self.assertAlmostEqual(cmd.vel[2], P.SEARCH_YAW)
 
+    def test_search_coverage_geometry_pinned(self):
+        # Iteration 2: the spin must cover a FULL circle (no unscanned azimuth wedge
+        # between annuli) and the relocation leg must be long enough to move the
+        # 0.7-2.5m head-cam annulus to a fresh, adjacent band (>=1.7m). vx=0.55 and
+        # wz=1.3 are the proven WBC velocities; only the step counts may move.
+        dt = 0.02
+        spin_rad = P.SEARCH_ROTATE_STEPS * P.SEARCH_YAW * dt
+        leg_m = P.SEARCH_RELOCATE_STEPS * P.SEARCH_RELOCATE_FWD * dt
+        self.assertGreaterEqual(spin_rad, 2 * math.pi,
+                                "spin must be a full circle to avoid azimuth gaps")
+        self.assertGreaterEqual(leg_m, 1.7,
+                                "relocation leg must move the cam annulus to a fresh band")
+
 
 class SelectionTest(unittest.TestCase):
     def test_fresh_detection_triggers_approach(self):

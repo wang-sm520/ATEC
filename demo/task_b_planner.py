@@ -45,8 +45,18 @@ SWEEP_LAT_PERIOD = 36
 SWEEP_FWD_PERIOD = 25
 SEARCH_YAW = 1.3
 SEARCH_RELOCATE_FWD = 0.55
-SEARCH_ROTATE_STEPS = 185
-SEARCH_RELOCATE_STEPS = 75
+# Search coverage geometry (iteration 2). vx=0.55 and wz=1.3 are proven-stable WBC
+# velocities and are FIXED; only the durations are strategy. At dt=0.02s each step is
+# 0.026 rad of yaw or 0.011m of travel. The head cam sees a 0.7-2.5m ground annulus per
+# spin, so consecutive scan stops must be ~1.8m apart for their annuli to abut rather
+# than overlap. The old cycle (185 rotate = 276deg, 75 relocate = 0.83m) under-rotated
+# (left an unscanned azimuth wedge each stop) AND under-translated (annuli heavily
+# overlapped), so the robot churned the spawn bubble and missed objects spread across
+# the 10x10m arena. New cycle: a FULL 360deg spin at each stop (242 steps -> no azimuth
+# gap) then a 1.8m leg (165 steps -> fresh, adjacent annulus). The forward camera strip
+# during the longer relocation also scans the gap between annuli.
+SEARCH_ROTATE_STEPS = 242     # 242 * 1.3 * 0.02 = 6.29 rad = 360deg full circle
+SEARCH_RELOCATE_STEPS = 165   # 165 * 0.55 * 0.02 = 1.82m leg (~2.2x the old 0.83m)
 APPROACH_SPEED_GAIN = 1.9
 APPROACH_VX_MAX, APPROACH_VY_MAX, APPROACH_WZ_MAX = 0.6, 0.4, 1.6
 

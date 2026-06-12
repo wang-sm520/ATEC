@@ -42,7 +42,7 @@ PYTHONPATH=. python scripts/play_atec_task.py --task ATEC-TaskB-G1 --enable_came
 
 ```bash
 # Fast non-Isaac unit tests (numpy-based run; torch/onnx parts skip if absent).
-python -m unittest tests.task_b.test_solution_task_b_g1 -v
+python -m unittest discover -s tests/task_b -p 'test_*.py' -v
 
 # Eval the WBC solution + record a 3rd-person(follow)+head-cam+right-hand-cam video.
 PYTHONPATH=. python scripts/eval_task_b_g1_wbc.py \
@@ -86,17 +86,24 @@ LiDAR raycasts only `/World/ground` (a terrain height scan) — it CANNOT see ob
 
 ## Task B WBC solution (demo/solution.py) — current architecture
 
-A single whole-body controller replaces walk+squat+sweep. Pipeline per `predicts()`: dead-reckon pose → posture guard → RGB-D perception (throttled every 5 steps) → planner FSM → map phase to WBC command.
+A single whole-body controller replaces walk+squat+sweep. The implementation is split into focused, single-responsibility modules wired together by a thin `solution.py`. Pipeline per `predicts()`: dead-reckon pose → posture guard → RGB-D perception (throttled every 5 steps) → planner FSM → map phase to WBC command.
 
+- `demo/solution.py` — thin wiring ONLY (no planner/motion logic, constants, or state machine). `AlgSolution.predicts()` constructs and sequences `MiniWBC` + `DeadReckoningOdometry` + `TaskBRgbdPerception` + `TaskBPlanner` + `PostureGuard`. Uses a try/except import so it works both as platform top-level (`from task_b_planner import`) and dev (`from demo.task_b_planner import`).
+- `demo/task_b_planner.py` — `TaskBPlanner`, the unified FSM. Phases: `search` → `approach` → `creep` → `squat_sweep` → `stand_up` (then back to `search`/`approach`). Emits one `WBCCommand` per step. Holds all planner constants and the phase logic; `PostureGuard`-driven `recover` interrupts any phase into `stand_up`.
+- `demo/task_b_nav.py` — stdlib-only kinematics: `Pose2D`, `DeadReckoningOdometry` (integrates base velocity), `PostureGuard` (flags fall/recover from projected gravity).
+- `demo/task_b_perception.py` — `TaskBRgbdPerception` (color+depth blob detector). **Ground-projects depth via the 47.6° camera pitch** in `_project_pixel_to_base` — using raw slant depth as ground distance is wrong and was the original bug.
 - `demo/mini_wbc.py` `MiniWBC` — adapter for `mini/`'s loco-manip ONNX policy (`policy18.onnx`). Commands: base velocity(3), base height, waist rpy(3), **left/right hand pose (xyz+wxyz quat, base frame)**; obs 115 + 5-frame history + ik_input 15 → action 29 + ik_output 17. The policy uses IsaacLab *interleaved* joint order; mini's "mujoco" order == ATEC dex1 order, so `ATEC_TO_POLICY`/`POLICY_TO_ATEC` permute between them. The 4 dex1 fingers are held at default.
-- `demo/solution_task_b_g1.py` — reusable modules: `TaskBRgbdPerception` (color+depth blobs; **ground-projects depth via the 47.6° camera pitch** in `_project_pixel_to_base` — using raw slant depth as ground distance is wrong and was the original bug), `DeadReckoningOdometry`, `TaskBPlanner` (search→approach_object→squat_sweep→stand_up), `PostureGuard`. Also contains older unused bridges (`G1VelocityPolicyBridge`, `OpenWBTSquatBridge`, `GroundSweepArmController`).
 - Reach strategy: detect → rotate-scan/approach → creep in → squat to base height **0.30** → BOTH hands brush the front ground (Lissajous sweep at floor level) → stand → next. The generous 0.20m grasp sphere means a sweep beats precise single-point targeting.
 
 **WBC command valid ranges (from `mini/command_gui.py`) — commanding outside misbehaves:** base height [0.3, 0.9]; hand x [-0.2, 0.6]; hand z [-0.2, 0.65]; left-hand y [-0.1, 0.6]; right-hand y [-0.6, 0.1]. Key consequence: only at base height ≈0.30 does hand z=-0.20 reach the floor (world ~0.12); a shallower squat cannot reach floor objects within valid range.
 
 `mini/` is the standalone source of the controller (MuJoCo viewer + `g1_loco_manip.py` + `command_gui.py`); it is reference only — the ATEC adapter is `demo/mini_wbc.py`.
 
-Submission set (upload these together, flat, as the import root): `solution.py`, `mini_wbc.py`, `solution_task_b_g1.py`, `policy18.onnx`, `requirements.txt` (adds `onnxruntime`). Staged copy at `demo/task_b/`. `solution.py` uses a try/except import so it works both as platform top-level (`from mini_wbc import`) and dev (`from demo.mini_wbc import`). The prior Task D solution is preserved at `demo/solution_task_d.py`.
+Two optimization-phase tunables worth preserving:
+- **Sighting band gating (0.60–3.0m):** `task_b_planner.py` only trusts a detection whose ground distance falls in this band. The head cam is pitched ~47.6° down and is physically blind for ground objects closer than ~0.62m (they drop below the frame); beyond ~3.0m the depth projection is unreliable. Detections outside the band are noise or the robot's own body and must never select/refresh/enter memory — relaxing this re-introduces phantom locks and squats on empty floor.
+- **Search cycle = full 360° spin + 1.8m leg:** each scan stop does a complete 360° in-place spin (`SEARCH_ROTATE_STEPS=242`) then walks a 1.8m leg (`SEARCH_RELOCATE_STEPS=165`) so consecutive scan annuli abut rather than overlap, giving full coverage of the 10×10m arena. The old under-rotated cycle (276° + 0.83m) left azimuth/coverage gaps.
+
+Submission set (7 files, uploaded together flat as the import root): the five modules above (`solution.py`, `task_b_planner.py`, `task_b_nav.py`, `task_b_perception.py`, `mini_wbc.py`) + `policy18.onnx` + `requirements.txt` (adds `onnxruntime`). Staged copy at `demo/task_b/`; `tests/task_b/test_submission_staging.py` is a byte-equality guard that fails if any staged file drifts from its `demo/` source (re-sync the copy after editing a module). The prior Task D solution is preserved at `demo/solution_task_d.py`.
 
 Design/run notes: `docs/superpowers/specs/2026-06-10-task-b-g1-squat-sweep-design.md`, `docs/superpowers/plans/2026-06-10-task-b-g1-squat-sweep.md`, `docs/task_b_g1_squat_notes.md` (chronological Isaac-run findings + tunables).
 

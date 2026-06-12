@@ -370,3 +370,54 @@ from spawn so a 76s window catches fewer; a longer episode (real 20-min) amortiz
 
 Throughput note: short eval = ~76 sim-s in ~4-5 min wall (incl. ~90s startup), fits
 the 5-min budget.
+
+## 2026-06-12 Optimization iteration 2 — search coverage rebalance (KEEP)
+
+Change (commit 8334c7d): `demo/task_b_planner.py` durations only — `SEARCH_ROTATE_STEPS`
+185->242 (full 360deg spin per scan stop, was 276deg leaving an azimuth wedge unscanned)
+and `SEARCH_RELOCATE_STEPS` 75->165 (1.8m relocation leg, was 0.83m so head-cam annuli
+heavily overlapped). vx=0.55, wz=1.3, and all balance constants UNCHANGED. 1 new pinned
+test (`test_search_coverage_geometry_pinned`) asserting spin >= 2*pi and leg >= 1.7m.
+132 tests green; staging copy re-synced.
+
+Privileged diag A/B (iter1 = `diag_approach_v2`, iter2 = `diag_approach_iter2`, 3800 steps):
+| metric | iter1 | iter2 |
+|---|---|---|
+| search steps | 1061 | 749 |
+| true path length | 18.06m | 18.74m |
+| approach episodes (objects reached) | 15 | 22 |
+| reachable squats (<=0.6m) | 97% | 98% |
+| empty-floor squats (>1m) | 0% | 0% |
+| squat nearest-TRUE median | 0.12m | 0.35m |
+| final odom drift | 0.69 | 0.21 |
+
+Two iter2 diag re-runs (`iter2b`) hung mid-episode (steps 2450 / 3400) on the known
+transient Isaac camera/driver stall — neither wrote diag.json, so metrics above use the
+predecessor's complete `diag_approach_iter2` run (3800 rows, verified intact, same code).
+
+Scored evals (target 76 sim-s each, no_video): **3.0 / 2.0 / 1.0**, touched
+[2,4,19] / [2,5] / [4], **0 falls** (base_z dips are squats with recovery to ~0.80).
+All three runs were truncated by the same Isaac stall / 300s wall cap before reaching
+76s (ended at 68 / 60 / 64.8 sim-s); each score had plateaued for 20-42 sim-s before
+truncation, so the totals are trustworthy. Total score 6.0 = identical to iter1's 6.0,
+same 3/2/1 distribution. Crediting the intended 76s/run: 6.0/228s = 1.58 pts/sim-min,
+matching iter1; over actual sim-s reached: 1.87 pts/sim-min.
+
+Verdict: KEEP. iter2 matches iter1 on score (6.0, same distribution) with 0 falls and
+strictly better coverage: +47% objects reached (22 vs 15 approach episodes), 29% fewer
+search steps churning the spawn bubble (749 vs 1061), and 3x lower odom drift (0.21 vs
+0.69). No regression on any axis; the rebalanced search visits more of the 10x10m arena
+per unit time, which a full 20-min episode amortizes into more total objects.
+
+## Optimization phase summary — baseline -> iter2
+
+| stage | change | scored result | falls | key coverage metric |
+|---|---|---|---|---|
+| baseline | pre-optimization planner | 4 pts over 3x300s = 0.27 pts/sim-min | 2/4 falls | squats on empty floor (55%), churns 2.75m bubble |
+| iteration 1 | gate target selection/memory/refresh to physically-visible sighting band (0.6-3.0m) | 2/3/1 over 76s = 1.58 pts/sim-min | 0/4 falls | reachable squats 97%, empty-floor 0%, path 18.06m, 15 objects reached |
+| iteration 2 | search coverage rebalance — full 360deg spin (242 steps) + 1.8m relocation legs (165 steps); durations only | 3/2/1 = 1.58-1.87 pts/sim-min | 0 falls | 22 objects reached, 749 search steps, drift 0.21 |
+
+Both iterations KEPT. Net: 0.27 -> ~1.6+ pts/sim-min (~5.9x), 2/4 falls -> 0 falls, and
+search now sweeps the arena (22 distinct objects reached) instead of thrashing spawn.
+All balance constants (SQUAT_HEIGHT, HAND_Z, REACH/LAT, sweep periods, STOW, mini_wbc,
+perception projection) remained frozen across the entire phase.

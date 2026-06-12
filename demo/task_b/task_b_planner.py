@@ -37,7 +37,10 @@ REACH_FWD_MIN, REACH_FWD_MAX = -0.10, 0.58
 LEFT_LAT_MIN, LEFT_LAT_MAX = -0.10, 0.55
 RIGHT_LAT_MIN, RIGHT_LAT_MAX = -0.55, 0.10
 CREEP_VEL = 0.35
-CREEP_STEPS = 22
+CREEP_STEPS = 10  # was 22; user-observed ~0.1m overshoot past the object.
+                  # 10 steps at 0.35 m/s * 0.02s = 0.07m of creep: the sweep
+                  # reaches forward (fwd -0.10..0.58) but NOT backward, so
+                  # stopping short is strictly safer than overshooting.
 HAND_SPREAD = 0.10
 SWEEP_LAT_AMP = 0.14
 SWEEP_FWD_AMP = 0.10

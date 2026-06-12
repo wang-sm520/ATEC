@@ -1,7 +1,7 @@
 """Calibrate Task B G1 RGB-D object detections against local scene truth.
 
 This script intentionally uses privileged env.scene access for local calibration
-only. Do not copy scene-truth access into demo/solution_task_b_g1.py.
+only. Do not copy scene-truth access into demo/task_b_perception.py.
 
 Usage:
   PYTHONPATH=. python scripts/probe_task_b_g1_objects.py \
@@ -37,7 +37,8 @@ simulation_app = app_launcher.app
 import torch  # noqa: E402
 import gymnasium as gym  # noqa: E402
 import atec_rl_lab.tasks  # noqa: F401,E402
-from demo.solution_task_b_g1 import Pose2D, TaskBRgbdPerception  # noqa: E402
+from demo.task_b_nav import Pose2D  # noqa: E402
+from demo.task_b_perception import TaskBRgbdPerception  # noqa: E402
 from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 
 

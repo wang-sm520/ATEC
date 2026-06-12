@@ -35,7 +35,7 @@ from PIL import Image, ImageDraw  # noqa: E402
 import atec_rl_lab.tasks  # noqa: F401,E402
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent  # noqa: E402
 from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
-from demo.solution_task_b_g1 import AlgSolution  # noqa: E402
+from demo.solution import AlgSolution  # noqa: E402
 
 
 def to_uint8_img(t):

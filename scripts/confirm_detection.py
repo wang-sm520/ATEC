@@ -37,7 +37,8 @@ import atec_rl_lab.tasks  # noqa: F401,E402
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent  # noqa: E402
 from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 from demo.mini_wbc import MiniWBC, DEFAULT_LEFT_HAND, DEFAULT_RIGHT_HAND  # noqa: E402
-from demo.solution_task_b_g1 import DeadReckoningOdometry, TaskBRgbdPerception  # noqa: E402
+from demo.task_b_nav import DeadReckoningOdometry  # noqa: E402
+from demo.task_b_perception import TaskBRgbdPerception  # noqa: E402
 
 
 def main():

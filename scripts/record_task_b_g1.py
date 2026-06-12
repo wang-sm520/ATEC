@@ -1,4 +1,4 @@
-"""录制 demo.solution_task_b_g1.AlgSolution 在 ATEC-TaskB-G1 上跑一局的视频。
+"""录制 demo.solution.AlgSolution 在 ATEC-TaskB-G1 上跑一局的视频。
 
 Usage:
   PYTHONPATH=. python scripts/record_task_b_g1.py \
@@ -30,7 +30,7 @@ import gymnasium as gym  # noqa: E402
 import atec_rl_lab.tasks  # noqa: F401,E402
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent  # noqa: E402
 from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
-from demo.solution_task_b_g1 import AlgSolution  # noqa: E402
+from demo.solution import AlgSolution  # noqa: E402
 
 
 def main():

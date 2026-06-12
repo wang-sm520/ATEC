@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Direct evaluator for demo.solution_task_b_g1.AlgSolution on ATEC Task B G1."""
+"""Direct evaluator for demo.solution.AlgSolution on ATEC Task B G1."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from isaaclab.app import AppLauncher
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Evaluate demo.solution_task_b_g1 on ATEC-TaskB-G1.")
+    parser = argparse.ArgumentParser(description="Evaluate demo.solution on ATEC-TaskB-G1.")
     parser.add_argument("--task", type=str, default="ATEC-TaskB-G1", help="Name of the task to evaluate.")
     parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
     parser.add_argument("--max_steps", type=int, default=6000, help="Maximum number of env steps to run.")
@@ -142,7 +142,7 @@ def run_evaluation(args: argparse.Namespace, simulation_app: Any) -> tuple[float
     import gymnasium as gym
 
     import atec_rl_lab.tasks  # noqa: F401
-    from demo.solution_task_b_g1 import AlgSolution
+    from demo.solution import AlgSolution
     from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
     from isaaclab_tasks.utils import parse_env_cfg
 

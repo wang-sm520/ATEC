@@ -34,7 +34,7 @@ AMASS .npz   ─────┼─▶ smplx_to_robot.py ─┘   (root_pos/rot/d
 
 ## 1. 目录与角色
 
-### GMR 侧（`/home/hpf/wsm/GMR`）
+### GMR 侧
 
 | 路径 | 角色 |
 |---|---|
@@ -273,7 +273,7 @@ PY
 
 ## 8. 新增一段 motion（如爬楼梯）
 
-1. 候选数据放进 `~/wsm/GMR/data/<dataset>/`（AMASS `.npz` 或 LAFAN `.bvh`）。
+1. 候选数据放进 `GMR/data/<dataset>/`（AMASS `.npz` 或 LAFAN `.bvh`）。
 2. 单条重定向：`smplx_to_robot.py`（npz）或 `bvh_to_robot.py`（bvh），`--robot unitree_g1`，存 pkl。
 3. 人眼验收（`vis_robot_motion.py`）。
 4. `gmr_to_amp_json.py --pkl ... --output motion_data/g1_29dof/<new>.json --motion_weight <w>`。

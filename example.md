@@ -64,6 +64,51 @@ Collect expert trajectories for Task E:
 python scripts/act/collect_demos_task_e.py --pick_objects 3 --num_demos 100 --headless --enable_cameras --save_images
 ```
 
+#### Optimized full-order Task E data collection
+
+First sweep grasp offsets separately for the box, bottle, and banana:
+
+```bash
+python scripts/act/sweep_task_e_grasp_offsets.py \
+    --objects 1 2 3 \
+    --offsets 0.070 0.075 0.080 0.085 0.090 0.095 \
+    --attempts_per_offset 5 \
+    --optimized_grasp_flow \
+    --headless \
+    --enable_cameras \
+    --output datasets/atec_task_e/grasp_offset_sweep.json
+```
+
+Then validate the full `object_1 → object_2 → object_3` state-machine flow before collecting the final dataset:
+
+```bash
+python scripts/act/collect_demos_task_e.py \
+    --full_order_123 \
+    --num_demos 5 \
+    --max_attempts 10 \
+    --only_success \
+    --headless \
+    --enable_cameras \
+    --optimized_grasp_flow \
+    --grasp_offset_json datasets/atec_task_e/grasp_offset_sweep.json \
+    --output_dir datasets/atec_task_e/validation_full_order
+```
+
+Only after validation succeeds, collect the final 100 full-order demonstrations:
+
+```bash
+python scripts/act/collect_demos_task_e.py \
+    --full_order_123 \
+    --num_demos 100 \
+    --only_success \
+    --headless \
+    --enable_cameras \
+    --save_images \
+    --optimized_grasp_flow \
+    --grasp_offset_json datasets/atec_task_e/grasp_offset_sweep.json \
+    --output_dir datasets/atec_task_e/final_100
+```
+
 Filter out near-zero actions from the collected dataset:
 
 ```bash

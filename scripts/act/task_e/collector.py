@@ -61,17 +61,45 @@ def _rerandomize_objects(env: ManagerBasedRLEnv, rng: np.random.Generator) -> No
     env.unwrapped.sim.forward()
 
 
-_BASKET_MAX_Z = TABLE_TOP_Z + 0.1   # object must be below this to count as inside
+_BASKET_MIN_Z = TABLE_TOP_Z
+_BASKET_MAX_Z = TABLE_TOP_Z + 0.15
+
+
+def get_objects_in_basket(env: ManagerBasedRLEnv, pick_objects: list[int]) -> dict[int, bool]:
+    """Return per-object basket success for the requested objects."""
+    result: dict[int, bool] = {}
+    for obj_idx in pick_objects:
+        pos = env.unwrapped.scene.rigid_objects[f"object_{obj_idx}"].data.root_pos_w[0]
+        z = pos[2].item()
+        in_basket = (
+            abs(pos[0].item() - BASKET_CENTER_X) <= BASKET_IN_X and
+            abs(pos[1].item() - BASKET_CENTER_Y) <= BASKET_IN_Y and
+            _BASKET_MIN_Z <= z <= _BASKET_MAX_Z
+        )
+        result[obj_idx] = bool(in_basket)
+    return result
+
 
 def check_objects_in_basket(env: ManagerBasedRLEnv, pick_objects: list[int]) -> bool:
     """Return True only if every picked object is inside the basket region and settled."""
-    for obj_idx in pick_objects:
-        pos = env.unwrapped.scene.rigid_objects[f"object_{obj_idx}"].data.root_pos_w[0]
-        if (abs(pos[0].item() - BASKET_CENTER_X) > BASKET_IN_X or
-                abs(pos[1].item() - BASKET_CENTER_Y) > BASKET_IN_Y or
-                pos[2].item() > _BASKET_MAX_Z):
-            return False
-    return True
+    return all(get_objects_in_basket(env, pick_objects).values())
+
+
+def _classify_step_end(env: ManagerBasedRLEnv, pick_objects: list[int], terminated, truncated) -> str:
+    """Classify environment done flags for Task E demo collection.
+
+    Returns:
+      "continue" — keep recording
+      "success"  — official basket-success termination; keep recorded data
+      "failure"  — timeout/truncation or non-success termination; discard demo
+    """
+    if truncated.any():
+        return "failure"
+    if terminated.any():
+        if check_objects_in_basket(env, pick_objects):
+            return "success"
+        return "failure"
+    return "continue"
 
 
 def collect_one_demo(
@@ -85,6 +113,10 @@ def collect_one_demo(
     default_jpos: torch.Tensor,
     rng:         np.random.Generator,
     camera=None,
+    steps: dict[str, int] | None = None,
+    grasp_z_offsets: dict[int, float] | None = None,
+    tool_center_offset_local: list[float] | tuple[float, float, float] | None = None,
+    use_basket_drop_height: bool = False,
 ) -> dict | None:
     """Run one full episode and return recorded data, or None on early termination.
 
@@ -119,7 +151,14 @@ def collect_one_demo(
                  ee_home, eq_home, g_open, default_jpos)
 
     # Pre-compute grasp quaternions from actual object orientations after reset
-    sm = PickPlaceStateMachine(pick_objects, device)
+    sm = PickPlaceStateMachine(
+        pick_objects,
+        device,
+        steps=steps,
+        grasp_z_offsets=grasp_z_offsets,
+        tool_center_offset_local=tool_center_offset_local,
+        use_basket_drop_height=use_basket_drop_height,
+    )
     for obj_idx in pick_objects:
         obj_quat = env.unwrapped.scene.rigid_objects[f"object_{obj_idx}"] \
                        .data.root_state_w[0, 3:7]
@@ -162,8 +201,12 @@ def collect_one_demo(
 
         _, _, terminated, truncated, _ = env.step(env_action)
 
-        if terminated.any() or truncated.any():
-            print("[WARN] Episode ended early — skipping demo.")
+        step_end = _classify_step_end(env, pick_objects, terminated, truncated)
+        if step_end == "success":
+            print("[INFO] Episode terminated by basket success.")
+            break
+        if step_end == "failure":
+            print("[WARN] Episode ended before basket success — skipping demo.")
             return None
 
     result = {

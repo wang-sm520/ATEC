@@ -31,48 +31,16 @@ import h5py
 import json
 import numpy as np
 
-from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.envs import ManagerBasedRLEnv
-from isaaclab.sensors import CameraCfg
-import isaaclab.sim as sim_utils
-
-from atec_rl_lab.tasks.task_e.env_cfg import TaskEEnvPiperCfg
 from atec_rl_lab.utils import CartesianController
 
 from task_e.config import (
     EE_BODY_NAME, ARM_JOINT_NAMES, GRIPPER_JOINT_NAMES,
-    ACT_STIFFNESS, ACT_DAMPING, ACT_EFFORT_LIMIT, ACT_VEL_LIMIT,
-    CAM_H, CAM_W, CAM_POS, CAM_ROT,
+    OBJECT_GRASP_Z_OFFSETS, OPTIMIZED_STEPS,
 )
-from task_e.collector import check_objects_in_basket, collect_one_demo
+from task_e.collector import collect_one_demo, get_objects_in_basket
+from task_e.env_setup import build_task_e_env
+from task_e.options import resolve_grasp_z_offsets, resolve_pick_objects
 
-
-def build_env(pick_objects: list[int], need_camera: bool) -> ManagerBasedRLEnv:
-    import time
-    cfg = TaskEEnvPiperCfg()
-    cfg.seed              = int(time.time_ns() % (2**31))   # random seed each call
-    cfg.scene.num_envs    = 1
-    cfg.episode_length_s  = 40.0 * len(pick_objects) + 10.0
-    cfg.scene.robot.actuators["default"] = ImplicitActuatorCfg(
-        joint_names_expr=[".*"],
-        effort_limit=ACT_EFFORT_LIMIT,
-        velocity_limit=ACT_VEL_LIMIT,
-        stiffness=ACT_STIFFNESS,
-        damping=ACT_DAMPING,
-    )
-    # if need_camera:
-    #     cfg.scene.video_cam = CameraCfg(
-    #         prim_path="{ENV_REGEX_NS}/video_cam",
-    #         update_period=0.0,
-    #         height=CAM_H, width=CAM_W,
-    #         data_types=["rgb"],
-    #         spawn=sim_utils.PinholeCameraCfg(
-    #             focal_length=24.0, focus_distance=400.0,
-    #             horizontal_aperture=20.955, clipping_range=(0.1, 100.0),
-    #         ),
-    #         offset=CameraCfg.OffsetCfg(pos=CAM_POS, rot=CAM_ROT, convention="world"),
-    #     )
-    return ManagerBasedRLEnv(cfg)
 
 
 def init_output(output_dir: str) -> tuple[str, str]:
@@ -104,10 +72,29 @@ def save_traj(traj_path: str, traj_idx: int, data: dict,
 
 
 def main() -> None:
-    pick_objects = sorted(set(args_cli.pick_objects))
+    try:
+        pick_objects = resolve_pick_objects(args_cli.pick_objects, args_cli.full_order_123)
+        grasp_z_offsets = resolve_grasp_z_offsets(
+            args_cli.grasp_z_offsets,
+            args_cli.grasp_offset_json,
+            defaults=OBJECT_GRASP_Z_OFFSETS,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"[ERROR] {exc}") from exc
+
+    if args_cli.full_order_123 and not args_cli.only_success:
+        print("[INFO] --full_order_123 enables --only_success for full-order datasets.")
+        args_cli.only_success = True
+
+    steps = OPTIMIZED_STEPS if args_cli.optimized_grasp_flow else None
     need_camera = args_cli.save_video or args_cli.save_images
 
-    env    = build_env(pick_objects, need_camera)
+    print(f"[INFO] pick_objects={pick_objects}")
+    print(f"[INFO] grasp_z_offsets={grasp_z_offsets}")
+    print(f"[INFO] tool_center_offset_local={args_cli.tool_center_offset_local}")
+    print(f"[INFO] optimized_grasp_flow={args_cli.optimized_grasp_flow}")
+
+    env    = build_task_e_env(pick_objects, need_camera)
     dev    = env.unwrapped.device
     camera = env.unwrapped.scene["video_cam"] if need_camera else None
 
@@ -133,13 +120,22 @@ def main() -> None:
         imageio = _io
 
     traj_path, _ = init_output(args_cli.output_dir)
-    rng = np.random.default_rng()   # unseeded → different positions every run
+    rng = np.random.default_rng()
 
     n_ok = 0
     attempt = 0
     while n_ok < args_cli.num_demos:
+        if args_cli.max_attempts is not None and attempt >= args_cli.max_attempts:
+            print(
+                f"[ERROR] Reached --max_attempts={args_cli.max_attempts} "
+                f"with {n_ok}/{args_cli.num_demos} successful demos."
+            )
+            env.close()
+            raise SystemExit(1)
+
         attempt += 1
         print(f"\n[INFO] Demo {n_ok + 1}/{args_cli.num_demos}  (attempt {attempt})")
+        print(f"[INFO] order={pick_objects} offsets={grasp_z_offsets}")
 
         data = collect_one_demo(
             env, robot, ik_ctrl,
@@ -148,12 +144,18 @@ def main() -> None:
             default_jpos=default_jpos,
             rng=rng,
             camera=camera,
+            steps=steps,
+            grasp_z_offsets=grasp_z_offsets,
+            tool_center_offset_local=args_cli.tool_center_offset_local,
+            use_basket_drop_height=args_cli.optimized_grasp_flow,
         )
         if data is None:
             print("[WARN] Early termination — skipping.")
             continue
 
-        if args_cli.only_success and not check_objects_in_basket(env, pick_objects):
+        success_map = get_objects_in_basket(env, pick_objects)
+        print(f"[INFO] success: {success_map}")
+        if args_cli.only_success and not all(success_map.values()):
             print("[WARN] Objects not in basket — skipping (--only_success).")
             continue
 

@@ -1,15 +1,27 @@
 """Pick-place state machine and grasp-quaternion solver for Task E."""
 
+from collections.abc import Mapping
+
 import torch
-from isaaclab.utils.math import matrix_from_quat, quat_from_matrix
+from isaaclab.utils.math import matrix_from_quat, quat_apply, quat_from_matrix
 
 from .config import (
-    STEPS, STATE_ORDER,
-    CARRY_Z, PLACE_HEIGHT,
+    STEPS, STATE_ORDER, OBJECT_STATE_STEPS,
+    CARRY_Z, PLACE_HEIGHT, BASKET_DROP_Z,
     RETRACT_POS_X, RETRACT_POS_Y,
-    GRASP_Z_OFFSET,
+    GRASP_Z_OFFSET, OBJECT_GRASP_Z_OFFSETS,
+    TOOL_CENTER_OFFSET_LOCAL, OBJECT_TOOL_CENTER_OFFSETS_LOCAL,
+    OBJECT_BASKET_TARGET_OFFSETS,
     BASKET_CENTER_X, BASKET_CENTER_Y,
     DEFAULT_PLACE_QUAT_W,
+)
+
+
+_CACHED_OBJECT_POS_STATES = (
+    "ALIGN_GRIPPER",
+    "REACH",
+    "CLOSE",
+    "LIFT",
 )
 
 
@@ -85,12 +97,53 @@ class PickPlaceStateMachine:
     """Finite state machine that sequences pick-and-place for multiple objects.
 
     States (in order): INIT → PRE_GRASP → REACH → CLOSE → LIFT →
-                       TRANSPORT → PLACE → OPEN → RETRACT → (next object or done)
+                       TRANSPORT → PLACE → OPEN → LIFT_RETRACT → RETRACT →
+                       (next object or done)
     """
 
-    def __init__(self, object_indices: list[int], device: str):
+    def __init__(
+        self,
+        object_indices: list[int],
+        device: str,
+        steps: Mapping[str, int] | None = None,
+        grasp_z_offsets: Mapping[int, float] | None = None,
+        tool_center_offset_local: list[float] | tuple[float, float, float] | None = None,
+        object_state_steps: Mapping[int, Mapping[str, int]] | None = None,
+        use_basket_drop_height: bool = False,
+    ):
         self._obj_indices = object_indices
         self._device      = device
+        self._steps       = dict(steps) if steps is not None else STEPS
+        configured_object_steps = object_state_steps if object_state_steps is not None else OBJECT_STATE_STEPS
+        self._object_state_steps = {
+            int(obj_idx): {str(state): int(count) for state, count in state_steps.items()}
+            for obj_idx, state_steps in configured_object_steps.items()
+        }
+        self._grasp_z_offsets = {
+            int(k): float(v) for k, v in OBJECT_GRASP_Z_OFFSETS.items()
+        }
+        self._grasp_z_offsets.update({
+            int(k): float(v) for k, v in (grasp_z_offsets or {}).items()
+        })
+        self._basket_target_offsets = {
+            int(k): (float(v[0]), float(v[1]))
+            for k, v in OBJECT_BASKET_TARGET_OFFSETS.items()
+        }
+        if tool_center_offset_local is None:
+            self._tool_center_offsets_local = {
+                int(k): torch.tensor(v, dtype=torch.float32, device=device)
+                for k, v in OBJECT_TOOL_CENTER_OFFSETS_LOCAL.items()
+            }
+            self._tool_center_offset_local = torch.tensor(
+                TOOL_CENTER_OFFSET_LOCAL,
+                dtype=torch.float32,
+                device=device,
+            )
+        else:
+            global_offset = torch.tensor(tool_center_offset_local, dtype=torch.float32, device=device)
+            self._tool_center_offsets_local = {}
+            self._tool_center_offset_local = global_offset
+        self._use_basket_drop_height = bool(use_basket_drop_height)
         self._grasp_quat_cache: dict[int, torch.Tensor] = {}
         self.reset()
 
@@ -125,22 +178,26 @@ class PickPlaceStateMachine:
         # Freeze object position at start of PRE_GRASP to avoid drift during descent
         if s == "PRE_GRASP" and self._count == 0:
             self._cached_obj_pos = obj_pos.clone()
-        if s in ("REACH", "CLOSE") and self._cached_obj_pos is not None:
+        if s in _CACHED_OBJECT_POS_STATES and self._cached_obj_pos is not None:
             obj_pos = self._cached_obj_pos
 
-        ee_pos, gripper = self._get_target_pos_gripper(s, obj_pos, d)
         ee_quat         = self._get_target_quat(s, d)
+        ee_pos, gripper = self._get_target_pos_gripper(s, obj_pos, ee_quat, d)
 
         self._count += 1
-        if self._count >= STEPS[s]:
+        if self._count >= self._get_state_steps(s):
             self._count = 0
-            if s == "RETRACT":
+            if s == "LIFT_RETRACT" and self._ptr + 1 < len(self._obj_indices):
+                self._ptr += 1
+                self._cached_obj_pos = None
+                self._state_idx = self._current_state_order().index("PRE_GRASP")
+            elif s == "RETRACT":
                 self._ptr          += 1
                 self._cached_obj_pos = None
                 if self._ptr >= len(self._obj_indices):
                     self.done = True
                     return ee_pos, ee_quat, gripper
-                self._state_idx = STATE_ORDER.index("PRE_GRASP")
+                self._state_idx = self._current_state_order().index("PRE_GRASP")
             else:
                 self._state_idx += 1
 
@@ -152,49 +209,99 @@ class PickPlaceStateMachine:
 
     @property
     def state(self) -> str:
-        return STATE_ORDER[self._state_idx]
+        return self._current_state_order()[self._state_idx]
 
     @property
     def current_object_key(self) -> str:
-        return f"object_{self._obj_indices[self._ptr]}"
+        return f"object_{self._current_object_idx()}"
 
     # ------------------------------------------------------------------ #
     # Private helpers
     # ------------------------------------------------------------------ #
 
+    def _current_object_idx(self) -> int:
+        return self._obj_indices[min(self._ptr, len(self._obj_indices) - 1)]
+
+    def _current_state_order(self) -> list[str]:
+        order = list(STATE_ORDER)
+        object_steps = self._object_state_steps.get(self._current_object_idx(), {})
+        if "ALIGN_GRIPPER" in object_steps and "ALIGN_GRIPPER" not in order:
+            order.insert(order.index("REACH"), "ALIGN_GRIPPER")
+        return order
+
+    def _get_state_steps(self, state: str) -> int:
+        object_steps = self._object_state_steps.get(self._current_object_idx(), {})
+        if state in object_steps:
+            return object_steps[state]
+        return self._steps[state]
+
     def _get_target_pos_gripper(
-        self, s: str, obj_pos: torch.Tensor, d: str
+        self, s: str, obj_pos: torch.Tensor, ee_quat: torch.Tensor, d: str
     ) -> tuple[torch.Tensor, str]:
         if s == "INIT":
             return torch.tensor([RETRACT_POS_X, RETRACT_POS_Y, CARRY_Z], device=d), "open"
         elif s == "PRE_GRASP":
             p = obj_pos.clone(); p[2] = CARRY_Z
-            return p, "open"
+            return self._jaw_center_to_gripper_base(p, ee_quat), "open"
+        elif s == "ALIGN_GRIPPER":
+            p = obj_pos.clone(); p[2] = CARRY_Z
+            return self._jaw_center_to_gripper_base(p, ee_quat), "open"
         elif s == "REACH":
-            p = obj_pos.clone(); p[2] += GRASP_Z_OFFSET
-            return p, "open"
+            p = obj_pos.clone(); p[2] += self._get_grasp_z_offset()
+            return self._jaw_center_to_gripper_base(p, ee_quat), "open"
         elif s == "CLOSE":
-            p = obj_pos.clone(); p[2] += GRASP_Z_OFFSET
-            return p, "close"
+            p = obj_pos.clone(); p[2] += self._get_grasp_z_offset()
+            return self._jaw_center_to_gripper_base(p, ee_quat), "close"
         elif s == "LIFT":
             p = obj_pos.clone(); p[2] = CARRY_Z
-            return p, "close"
+            return self._jaw_center_to_gripper_base(p, ee_quat), "close"
         elif s == "TRANSPORT":
-            return torch.tensor([BASKET_CENTER_X, BASKET_CENTER_Y, CARRY_Z], device=d), "close"
+            return self._basket_target(CARRY_Z, d), "close"
         elif s == "PLACE":
-            return torch.tensor([BASKET_CENTER_X, BASKET_CENTER_Y, PLACE_HEIGHT], device=d), "close"
+            return self._basket_target(self._basket_release_z(), d), "close"
         elif s == "OPEN":
-            return torch.tensor([BASKET_CENTER_X, BASKET_CENTER_Y, PLACE_HEIGHT], device=d), "open"
+            return self._basket_target(self._basket_release_z(), d), "open"
         elif s == "LIFT_RETRACT":
-            return torch.tensor([BASKET_CENTER_X, BASKET_CENTER_Y, CARRY_Z], device=d), "open"
+            return self._basket_target(CARRY_Z, d), "open"
         elif s == "RETRACT":
             return torch.tensor([RETRACT_POS_X, RETRACT_POS_Y, CARRY_Z], device=d), "open"
         else:
             raise ValueError(f"Unknown state: {s}")
 
+    def _get_grasp_z_offset(self) -> float:
+        cur_idx = self._current_object_idx()
+        return self._grasp_z_offsets.get(cur_idx, GRASP_Z_OFFSET)
+
+    def _basket_target_xy(self) -> tuple[float, float]:
+        dx, dy = self._basket_target_offsets.get(self._current_object_idx(), (0.0, 0.0))
+        return BASKET_CENTER_X + dx, BASKET_CENTER_Y + dy
+
+    def _basket_target(self, z: float, d: str) -> torch.Tensor:
+        x, y = self._basket_target_xy()
+        return torch.tensor([x, y, z], dtype=torch.float32, device=d)
+
+    def _basket_release_z(self) -> float:
+        return BASKET_DROP_Z if self._use_basket_drop_height else PLACE_HEIGHT
+
+    def _jaw_center_to_gripper_base(self, jaw_center_pos: torch.Tensor, ee_quat: torch.Tensor) -> torch.Tensor:
+        local_offset = self._tool_center_offsets_local.get(
+            self._current_object_idx(),
+            self._tool_center_offset_local,
+        )
+        world_offset = quat_apply(
+            ee_quat.unsqueeze(0),
+            local_offset.unsqueeze(0),
+        ).squeeze(0)
+        return jaw_center_pos - world_offset
+
     def _get_target_quat(self, s: str, d: str) -> torch.Tensor:
         default_quat = torch.tensor(DEFAULT_PLACE_QUAT_W, dtype=torch.float32, device=d)
-        if s in ("REACH", "CLOSE", "LIFT"):
-            cur_idx = self._obj_indices[min(self._ptr, len(self._obj_indices) - 1)]
+        if self._current_object_idx() == 2 and s in ("PRE_GRASP", "REACH", "CLOSE", "LIFT"):
+            return default_quat
+        if s in ("ALIGN_GRIPPER", "REACH", "CLOSE", "LIFT"):
+            cur_idx = self._current_object_idx()
+            return self._grasp_quat_cache.get(cur_idx, default_quat)
+        if s == "PRE_GRASP" and self._current_object_idx() not in self._object_state_steps:
+            cur_idx = self._current_object_idx()
             return self._grasp_quat_cache.get(cur_idx, default_quat)
         return default_quat

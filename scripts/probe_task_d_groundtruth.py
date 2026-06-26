@@ -98,9 +98,24 @@ def main() -> None:
     min_robot_z = 1e9
     box_reached_target = False
     robot_max_x = -1e9
+    # Climb-switch tracking: _active flips to "climb" the first step predicts() sees
+    # phase == "forward". Checked every step (not just sampled ones).
+    climb_first_step = None
+    forward_first_step = None
+    climb_steps = 0
 
     for step in range(args_cli.num_steps):
         resp = solution.predicts(obs, score)
+        active_policy = getattr(solution.bridge, "_active", None)
+        phase_now = getattr(solution.controller, "phase", None)
+        if phase_now == "forward" and forward_first_step is None:
+            forward_first_step = step
+        if active_policy == "climb":
+            climb_steps += 1
+            if climb_first_step is None:
+                climb_first_step = step
+                print(f"[probe] *** CLIMB ENGAGED at step {step} "
+                      f"(phase={phase_now}, score={score:.1f}) ***")
         action = torch.tensor(resp["action"], dtype=torch.float32, device="cuda").view(1, -1)
         obs, reward, terminated, truncated, info = env.step(action)
         sim_dt = info.get("Step_dt", 0.02) if isinstance(info, dict) else 0.02
@@ -132,16 +147,22 @@ def main() -> None:
                 "box_w": [round(v, 3) for v in gt_box],
                 "robot_yaw": round(yaw, 3),
                 "lidar_elevated_hits": lidar_box_hits,
-                "est_robot_obs": est.get("robot_in_obstacle"),
-                "est_box_obs": est.get("box_in_obstacle"),
                 "phase": est.get("phase"),
+                "active_policy": active_policy,
+                "lidar_valid": est.get("lidar_valid"),
+                "lidar_box_in_pit": est.get("lidar_box_in_pit"),
+                "lidar_front_elevated": est.get("lidar_front_elevated"),
+                "front_box_seen": est.get("front_box_seen"),
+                "lidar_confidence": est.get("lidar_confidence"),
+                "lidar_alignment_angle": est.get("lidar_alignment_angle"),
                 "cmd": est.get("cmd"),
             }
             records.append(rec)
             print(f"[probe] step={step:03d} score={score:5.1f} "
                   f"robot_w=({gt_robot[0]:.2f},{gt_robot[1]:.2f},{gt_robot[2]:.2f}) "
                   f"box_w=({gt_box[0]:.2f},{gt_box[1]:.2f},{gt_box[2]:.2f}) "
-                  f"lidar_elev_hits={lidar_box_hits} phase={rec['phase']}")
+                  f"lidar_elev_hits={lidar_box_hits} phase={rec['phase']} "
+                  f"active={active_policy} box_in_pit={rec['lidar_box_in_pit']}")
 
         if step % args_cli.snapshot_every == 0 and "extero" in obs:
             flat = obs["extero"].detach().float().cpu().reshape(-1)
@@ -164,6 +185,12 @@ def main() -> None:
         "box_final_w": [round(v, 3) for v in box.data.root_pos_w[0].tolist()],
         "box_reached_target_x": box_reached_target,
         "env_origin": env_origin,
+        # Did the climb policy actually engage during this run?
+        "climb_switched": climb_first_step is not None,
+        "climb_first_step": climb_first_step,
+        "forward_first_step": forward_first_step,
+        "climb_steps": climb_steps,
+        "climb_policy_path": getattr(solution.bridge, "_paths", {}).get("climb"),
     }
     print(f"[probe] SUMMARY: {json.dumps(summary, indent=2)}")
     with open(os.path.join(args_cli.out, "trace.json"), "w") as f:

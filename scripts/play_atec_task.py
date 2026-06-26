@@ -102,6 +102,17 @@ def play() -> tuple[float, float]:
 
     dt = env.unwrapped.step_dt if hasattr(env.unwrapped, "step_dt") else None
     timestep = 0
+    _last_phase_active = (None, None)  # to print only on transitions
+    try:
+        _robot = env.unwrapped.scene["robot"]
+    except Exception:
+        _robot = None
+
+    def _robot_xz():
+        if _robot is None:
+            return (None, None)
+        p = _robot.data.root_pos_w[0]
+        return (round(float(p[0]), 2), round(float(p[2]), 2))
 
     # -------------------------------------------------------------------------
     # Play loop
@@ -117,6 +128,26 @@ def play() -> tuple[float, float]:
             giveup = resp["giveup"]
             if giveup:
                 break
+
+            # ---- live phase / active-policy readout (so you can watch the GUI and
+            # ---- see exactly when/if the climb policy is switched in) ----------
+            phase = getattr(getattr(solution, "controller", None), "phase", None)
+            active = getattr(getattr(solution, "bridge", None), "_active", None)
+            dbg = getattr(getattr(solution, "controller", None), "last_debug", {}) or {}
+            rx, rz = _robot_xz()
+            if (phase, active) != _last_phase_active:
+                print(f"[switch] step={timestep} phase={phase} policy={active} "
+                      f"front_top_height={dbg.get('lidar_front_top_height')} "
+                      f"robot_x={rx} robot_z={rz}", flush=True)
+                if active == "climb" and _last_phase_active[1] != "climb":
+                    print(f"*** CLIMB ENGAGED at step {timestep} (phase={phase}) ***", flush=True)
+                _last_phase_active = (phase, active)
+            elif timestep % 25 == 0:
+                # throttled heartbeat: watch box-top height fall toward 0.40 m, and
+                # whether the robot advances toward the x>2.0 finish (z<0.25 -> falling)
+                print(f"  step={timestep} phase={phase} policy={active} "
+                      f"front_top_height={dbg.get('lidar_front_top_height')} "
+                      f"robot_x={rx} robot_z={rz}", flush=True)
             actions = resp["action"]
             actions = torch.tensor(actions, dtype=torch.float32, device='cuda').view(1, -1)
             obs, reward, terminated, truncated, info = env.step(actions)

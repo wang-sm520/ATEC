@@ -182,8 +182,6 @@ class _LidarClimbObservation:
         alignment_vy: float,
         confidence: float,
         reason: str,
-        front_elevated_count: int = 0,
-        front_top_height: float = 0.0,
     ):
         self.valid = valid
         self.may_have_bridge = may_have_bridge
@@ -192,20 +190,10 @@ class _LidarClimbObservation:
         self.alignment_vy = alignment_vy
         self.confidence = confidence
         self.reason = reason
-        # Number of front azimuth bins that see an elevated hit (box face/top
-        # sticking up above ground). High while the box sits on the ground ahead;
-        # collapses to ~0 once the box drops into the pit and is no longer a tall
-        # obstacle in front.
-        self.front_elevated_count = front_elevated_count
-        # Height (m) of the tallest object seen in the front cone. ~0.6 while the box
-        # stands on the ground; collapses toward ~0 once the box falls into the pit.
-        # Primary "box fell in" trigger (the LiDAR -20 deg floor cannot see the pit
-        # interior directly, but it does see the box top descend as it drops in).
-        self.front_top_height = front_top_height
 
     @classmethod
     def invalid(cls, reason: str) -> "_LidarClimbObservation":
-        return cls(False, False, False, 0.0, 0.0, 0.0, reason, 0, 0.0)
+        return cls(False, False, False, 0.0, 0.0, 0.0, reason)
 
 
 class _TaskDLidarClimbDetector:
@@ -254,17 +242,12 @@ class _TaskDLidarClimbDetector:
         median = self._median(finite)
         pit_bins: list[int] = []
         top_bins: list[int] = []
-        # Height (m) of the tallest hit above ground across the front cone. The box
-        # is ~0.6 m tall on the ground; once it drops into the pit its top sinks
-        # below ground and this collapses to ~0.
-        front_top_height = 0.0
         for bin_index in self._front_bins():
             column = [row[bin_index] for row in rows if math.isfinite(row[bin_index])]
             if not column:
                 continue
             col_min = min(column)
             col_max = max(column)
-            front_top_height = max(front_top_height, median - col_min)
             if col_max - median >= self.pit_delta:
                 pit_bins.append(bin_index)
             if median - col_min >= self.elevated_delta:
@@ -291,9 +274,7 @@ class _TaskDLidarClimbDetector:
             f"may_have_bridge={may_have_bridge} angle={alignment_angle:.3f} vy={alignment_vy:.3f}"
         )
         return _LidarClimbObservation(
-            True, may_have_bridge, box_in_pit, alignment_angle, alignment_vy, confidence, reason,
-            front_elevated_count=len(top_bins),
-            front_top_height=front_top_height,
+            True, may_have_bridge, box_in_pit, alignment_angle, alignment_vy, confidence, reason
         )
 
     def _front_bins(self) -> list[int]:
@@ -359,8 +340,6 @@ class _WallPushController:
                       the WHOLE box clears the wall (by <= -0.2)
       around_back2  : route behind the box (-x) in the pit lane, facing +x
       push_x_pit    : push +x until the box drops into the pit (robot reaches the pit edge)
-      settle_climb  : box is in the pit -> stop, stand stable, strafe to the box centre (y)
-                      and square up to +x before committing to the crossing
       forward       : keep walking +x toward the finish (steps onto the box / pit; never stop)
     +14 (box) and +2 (x>-1.4 line) are collected en route.
     """
@@ -374,19 +353,6 @@ class _WallPushController:
     ALIGN_TIMEOUT_STEPS = 80
     ALIGN_ANGLE_TOL = 0.08
     MIN_REPUSH_STEPS = 30
-    # "Box fell into the pit" detection by object height: the LiDAR cannot see the
-    # pit interior at close range, but it does see the box top descend as it drops
-    # in. The box is ~0.6 m tall on the ground; once its measured top height falls
-    # below DROP_HEIGHT we treat it as fallen into the pit.
-    BOX_SEEN_HEIGHT = 0.50    # top height (m) that confirms the box is standing ahead
-    DROP_HEIGHT = 0.20        # top height (m) below which the box counts as dropped in
-    DROP_DEBOUNCE_FRAMES = 3  # consecutive below-threshold frames before triggering
-    # After the box drops, stand stable and centre on the box before crossing, so the
-    # robot does not rush the pit edge and topple in.
-    CLIMB_ALIGN_TOL = 0.08    # |ry - box_y| tolerance to be considered centred (m)
-    CLIMB_YAW_TOL = 0.10      # |yaw| tolerance to be considered squared up to +x (rad)
-    SETTLE_REQUIRED_FRAMES = 15   # consecutive aligned frames before committing to forward
-    SETTLE_TIMEOUT_STEPS = 60     # commit anyway after this many steps (avoid stalling)
     DOWN = -math.pi / 2
 
     def __init__(self, warmup_steps: int = 20, dt: float = 0.02):
@@ -410,10 +376,6 @@ class _WallPushController:
         self.retry_confirm_after_step = 0
         self._lidar_confirm_count = 0
         self._align_stable_count = 0
-        self._front_box_seen = False
-        self._drop_below_count = 0
-        self.settle_start_step = 0
-        self._settle_count = 0
         self._last_lidar = _LidarClimbObservation.invalid("lidar has not been measured")
         self.last_debug: dict[str, Any] = {}
 
@@ -429,9 +391,6 @@ class _WallPushController:
             "box_est": (round(self.bx, 3), round(self.by, 3)),
             "lidar_valid": self._last_lidar.valid,
             "lidar_box_in_pit": self._last_lidar.box_in_pit,
-            "lidar_front_elevated": self._last_lidar.front_elevated_count,
-            "lidar_front_top_height": round(self._last_lidar.front_top_height, 3),
-            "front_box_seen": self._front_box_seen,
             "lidar_confidence": round(self._last_lidar.confidence, 3),
             "lidar_alignment_angle": round(self._last_lidar.alignment_angle, 3),
             "lidar_alignment_vy": round(self._last_lidar.alignment_vy, 3),
@@ -484,44 +443,11 @@ class _WallPushController:
                 if self.wpi >= len(self.around_back2):
                     self.phase, self.jam_x, self.jam_step = "push_x_pit", rx, self.step
         elif self.phase == "push_x_pit":
-            # Keep pushing (see _control) until the box drops into the pit. The pit
-            # interior is invisible to the LiDAR at this range, so we detect the drop
-            # by object height: the box top reads ~0.6 m while it stands on the ground
-            # ahead, and falls below DROP_HEIGHT once it tips into the pit.
-            top_h = self._last_lidar.front_top_height if self._last_lidar.valid else 0.0
-            if self._last_lidar.valid and top_h >= self.BOX_SEEN_HEIGHT:
-                self._front_box_seen = True
-            if self._last_lidar.valid and top_h < self.DROP_HEIGHT:
-                self._drop_below_count += 1
-            else:
-                self._drop_below_count = 0
-            box_dropped = (
-                self._front_box_seen
-                and self._drop_below_count >= self.DROP_DEBOUNCE_FRAMES
-                and rx >= self.PIT_EDGE_X
-            )
-            if box_dropped:
-                # Box is in the pit. Don't rush the edge: settle and centre first.
-                self.phase = "settle_climb"
-                self.settle_start_step = self.step
-                self._settle_count = 0
-        elif self.phase == "settle_climb":
-            # Stand stable, strafe onto the box centre (y) and square up to +x. Only
-            # commit to the crossing once aligned for a few consecutive frames (or a
-            # timeout fires, so we never stall here forever).
-            aligned = (
-                abs(self.by - ry) <= self.CLIMB_ALIGN_TOL
-                and abs(_wrap_to_pi(ryaw)) <= self.CLIMB_YAW_TOL
-            )
-            if aligned:
-                self._settle_count += 1
-            else:
-                self._settle_count = 0
-            if (
-                self._settle_count >= self.SETTLE_REQUIRED_FRAMES
-                or self.step - self.settle_start_step >= self.SETTLE_TIMEOUT_STEPS
-            ):
-                self.phase = "forward"     # centred -> hand off to climb and cross
+            can_retry_confirm = self.step >= self.retry_confirm_after_step
+            if rx >= self.PIT_EDGE_X and can_retry_confirm and self._last_lidar.may_have_bridge:
+                self.phase = "confirm_pit_box"
+                self.confirm_start_step = self.step
+                self._lidar_confirm_count = 0
         elif self.phase == "confirm_pit_box":
             if self._last_lidar.box_in_pit and self._last_lidar.confidence >= 0.5:
                 self._lidar_confirm_count += 1
@@ -574,17 +500,8 @@ class _WallPushController:
         if self.phase == "align_climb":
             vy = self._last_lidar.alignment_vy if self._last_lidar.valid else 0.0
             return 0.15, _clamp(vy, -0.35, 0.35), _clamp(-2.2 * ryaw, -0.6, 0.6)
-        if self.phase == "settle_climb":
-            # Stand in place (no forward push), strafe onto the box centre (y) and
-            # square up to +x so the robot is centred before it starts the crossing.
-            vy = _clamp(1.2 * (self.by - ry), -0.3, 0.3)
-            wz = _clamp(-2.2 * _wrap_to_pi(ryaw), -0.6, 0.6)
-            return 0.0, vy, wz
-        # forward — climb engaged: just march straight forward to the finish at full
-        # speed (vx=1.0), only correcting yaw to hold heading +x. No strafing, never
-        # stop, never turn back.
-        wz = _clamp(-2.2 * _wrap_to_pi(ryaw), -0.6, 0.6)
-        return 1.0, 0.0, wz
+        # forward — keep walking +x toward the finish (onto the box / across; never stop)
+        return self._drive(rx, ry, ryaw, rx + 3.0, ry, 0.0, 0.3, 0.95, 0.4)
 
     @staticmethod
     def _reached(rx, ry, ryaw, wp, pos_tol=0.22, yaw_tol=0.3):

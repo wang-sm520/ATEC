@@ -604,6 +604,16 @@ class _WallPushController:
 # --------------------------------------------------------------------------- #
 # ATEC entry point
 # --------------------------------------------------------------------------- #
+_SCORE_GIVEUP_THRESHOLD = 35.0
+
+
+def _should_giveup_for_score(current_score: object) -> bool:
+    try:
+        return float(current_score) > _SCORE_GIVEUP_THRESHOLD
+    except (TypeError, ValueError):
+        return False
+
+
 class AlgSolution:
     def __init__(self):
         self.bridge = _G1VelocityPolicyBridge(policy_path=_POLICY_PATH, climb_path=_CLIMB_POLICY_PATH)
@@ -621,4 +631,4 @@ class AlgSolution:
         if self.controller.phase == "forward":
             self.bridge.select("climb")     # box confirmed/aligned or timeout fallback → climb to finish
         action = self.bridge.act(proprio, cmd)
-        return {"action": action, "giveup": False}
+        return {"action": action, "giveup": _should_giveup_for_score(current_score)}

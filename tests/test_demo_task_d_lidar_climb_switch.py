@@ -18,11 +18,19 @@ from demo.solution import (  # noqa: E402
     _LidarClimbObservation,
     _TaskDLidarClimbDetector,
     _WallPushController,
+    _should_giveup_for_score,
 )
 
 _CHANNELS = 16
 _BINS = 360
 _FRONT_BIN = 180
+
+
+def test_solution_giveup_after_task_d_score_is_complete():
+    assert not _should_giveup_for_score(35.0)
+    assert _should_giveup_for_score(35.01)
+    assert _should_giveup_for_score(36.0)
+    assert not _should_giveup_for_score("not-a-number")
 
 
 def _synthetic_scan(
